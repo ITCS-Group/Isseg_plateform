@@ -1,8 +1,43 @@
-﻿import { Module } from "@nestjs/common";
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AuthModule } from './auth/auth.module';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { PermissionsGuard } from './auth/guards/permissions.guard';
+import { RolesGuard } from './auth/guards/roles.guard';
+import configuration from './config/configuration';
+import { PrismaModule } from './database/prisma/prisma.module';
+import { IdentityModule } from './identity/identity.module';
 
 @Module({
-  imports: [],
+  imports: [
+    // ── Configuration ──────────────────────────────────────────────────────
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [configuration],
+      envFilePath: '.env',
+    }),
+
+    // ── Rate limiting : 100 requêtes / minute / IP ─────────────────────────
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+
+    // ── Base de données (global — PrismaService disponible partout) ────────
+    PrismaModule,
+
+    // ── Authentification & RBAC ────────────────────────────────────────────
+    AuthModule,
+
+    // ── Domaine : Identité (Users, Roles, Permissions) ─────────────────────
+    IdentityModule,
+  ],
   controllers: [],
-  providers: [],
+  providers: [
+    // ── Guards globaux (ordre : Throttler → JWT → Roles → Permissions) ─────
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
+  ],
 })
 export class AppModule {}
