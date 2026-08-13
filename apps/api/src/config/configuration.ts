@@ -17,4 +17,11 @@ export default () => ({
     refreshSecret: process.env.JWT_REFRESH_SECRET ?? 'CHANGE_ME_REFRESH_IN_PRODUCTION',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
   },
+  cookie: {
+    name: process.env.COOKIE_NAME ?? 'refreshToken',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict' as const,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 jours
+  },
 });

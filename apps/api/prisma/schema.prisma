@@ -46,26 +46,41 @@ enum StatutValidation {
   A_REVISER
 }
 
+enum AuditAction {
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  TOKEN_REFRESHED
+  TOKEN_REVOKED
+  ACCOUNT_LOCKED
+  ACCOUNT_UNLOCKED
+  PASSWORD_CHANGED
+}
+
 // ----------------------------------------------------
 // 1. IDENTITÉ ET UTILISATEURS
 // ----------------------------------------------------
 
 model Utilisateur {
-  id               String  @id @default(uuid())
-  nom              String
-  prenom           String
-  email            String  @unique
-  motDePasseHash   String
-  estActif         Boolean @default(true)
-  refreshTokenHash String?
+  id             String    @id @default(uuid())
+  nom            String
+  prenom         String
+  email          String    @unique
+  motDePasseHash String
+  estActif       Boolean   @default(true)
+  loginAttempts  Int       @default(0)
+  lockedUntil    DateTime?
+  lastLoginAt    DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  roles     UtilisateurRole[]
-  etudiant  Etudiant?
-  personnel Personnel?
-  parent    Parent?
+  roles         UtilisateurRole[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  etudiant      Etudiant?
+  personnel     Personnel?
+  parent        Parent?
 }
 
 model Role {
@@ -112,6 +127,33 @@ model RolePermission {
   permission Permission @relation(fields: [permissionId], references: [id])
 
   @@id([roleId, permissionId])
+}
+
+model RefreshToken {
+  id            String   @id @default(uuid())
+  tokenHash     String   @unique
+  utilisateurId String
+  expiresAt     DateTime
+  isRevoked     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+
+  @@index([utilisateurId])
+}
+
+model AuditLog {
+  id            String      @id @default(uuid())
+  utilisateurId String?
+  action        AuditAction
+  ipAddress     String?
+  userAgent     String?
+  details       Json?
+  createdAt     DateTime    @default(now())
+
+  utilisateur Utilisateur? @relation(fields: [utilisateurId], references: [id], onDelete: SetNull)
+
+  @@index([utilisateurId, action, createdAt])
 }
 
 // ----------------------------------------------------

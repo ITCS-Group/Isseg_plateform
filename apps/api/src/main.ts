@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger, VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
@@ -14,6 +15,9 @@ async function bootstrap() {
 
   // ── Sécurité : Headers HTTP ─────────────────────────────────────────────────
   app.use(helmet());
+
+  // ── Cookie parser ───────────────────────────────────────────────────────────
+  app.use(cookieParser());
 
   // ── CORS ────────────────────────────────────────────────────────────────────
   app.enableCors({

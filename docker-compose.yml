@@ -1,18 +1,25 @@
-﻿version: "3.8"
-
+﻿
 services:
 
   postgres:
-    image: postgres:15
+    image: postgres:16-alpine
     container_name: isseg-postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: isseg
+      POSTGRES_USER: ${POSTGRES_USER:-abdoul}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-azerty}
+      POSTGRES_DB: ${POSTGRES_DB:-isseg}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-abdoul} -d ${POSTGRES_DB:-isseg}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - isseg-network
 
 
   redis:
@@ -20,6 +27,14 @@ services:
     container_name: isseg-redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - isseg-network
 
 
   api:
@@ -33,12 +48,18 @@ services:
       - ./apps/api:/app
       - /app/node_modules
     environment:
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/isseg?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-isseg}?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      NODE_ENV: ${NODE_ENV:-development}
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - isseg-network
     command: npm run dev
 
 
@@ -54,6 +75,9 @@ services:
       - /app/node_modules
     depends_on:
       - api
+    restart: unless-stopped
+    networks:
+      - isseg-network
     command: npm run dev
 
 
@@ -68,11 +92,19 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      NODE_ENV: ${NODE_ENV:-development}
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - isseg-network
     command: npm run dev
 
 
-volumes:
+networks:
+  isseg-network:
+    driver: bridge
 
+volumes:
   postgres_data:

@@ -131,9 +131,10 @@ export class UsersService {
   async remove(id: string): Promise<void> {
     await this.findRowOrThrow(id);
 
+    // TODO: Révoquer les refresh tokens actifs dans la table RefreshToken
     await this.prisma.utilisateur.update({
       where: { id },
-      data: { estActif: false, refreshTokenHash: null },
+      data: { estActif: false },
     });
 
     this.logger.log(`Utilisateur désactivé : ${id}`);
@@ -146,9 +147,10 @@ export class UsersService {
 
     const hash = await bcrypt.hash(dto.nouveauMotDePasse, BCRYPT_ROUNDS);
 
+    // TODO: Révoquer les refresh tokens actifs dans la table RefreshToken
     await this.prisma.utilisateur.update({
       where: { id },
-      data: { motDePasseHash: hash, refreshTokenHash: null },
+      data: { motDePasseHash: hash },
     });
 
     this.logger.log(`Mot de passe modifié pour l'utilisateur ${id}`);

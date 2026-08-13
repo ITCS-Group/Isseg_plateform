@@ -1,1 +1,11 @@
-﻿{ "extends": "./base.json", "compilerOptions": { "module": "commonjs", "target": "es2021", "experimentalDecorators": true, "emitDecoratorMetadata": true } }
+{
+  "extends": "./base.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2021",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
+    "downlevelIteration": true
+  }
+}
