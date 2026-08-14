@@ -9,6 +9,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import configuration from './config/configuration';
 import { PrismaModule } from './database/prisma/prisma.module';
 import { IdentityModule } from './identity/identity.module';
+import { RegistrationModule } from './scolarite/registration/registration.module';
 
 @Module({
   imports: [
@@ -30,6 +31,9 @@ import { IdentityModule } from './identity/identity.module';
 
     // ── Domaine : Identité (Users, Roles, Permissions) ─────────────────────
     IdentityModule,
+
+    // ── Domaine : Scolarité — workflow d'inscription ───────────────────────
+    RegistrationModule,
   ],
   controllers: [],
   providers: [
