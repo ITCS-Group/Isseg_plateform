@@ -86,6 +86,23 @@ async function main() {
     }
   });
 
+  // Seed des filières de référence (idempotent via upsert sur `code`)
+  const filieres = [
+    { code: 'SEDU', nom: "Sciences de l'Éducation" },
+    { code: 'DID', nom: 'Didactique' },
+    { code: 'SDL', nom: 'Sciences du Langage' },
+    { code: 'SSOC', nom: 'Sciences Sociales' },
+  ];
+
+  for (const f of filieres) {
+    const filiere = await prisma.filiere.upsert({
+      where: { code: f.code },
+      update: { nom: f.nom },
+      create: { code: f.code, nom: f.nom },
+    });
+    console.log(`✅ Filière ${filiere.code}: ${filiere.nom}`);
+  }
+
   console.log('🎉 Seed completed successfully!');
 }
 

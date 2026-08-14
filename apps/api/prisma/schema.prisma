@@ -28,7 +28,7 @@ enum StatutDossier {
   BROUILLON
   SOUMIS
   EN_TRAITEMENT
-  ACCEPTE
+  INSCRIT
   REJETE
 }
 
@@ -57,6 +57,13 @@ enum AuditAction {
   PASSWORD_CHANGED
 }
 
+enum OutboxEventStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
 // ----------------------------------------------------
 // 1. IDENTITÉ ET UTILISATEURS
 // ----------------------------------------------------
@@ -81,6 +88,9 @@ model Utilisateur {
   etudiant      Etudiant?
   personnel     Personnel?
   parent        Parent?
+
+  dossiersValides     DossierInscription[]  @relation("DossierValidateur")
+  registrationHistory RegistrationHistory[] @relation("HistoryAuthor")
 }
 
 model Role {
@@ -218,13 +228,24 @@ model AnneeUniversitaire {
   dossiersInscription DossierInscription[]
 }
 
+model Filiere {
+  id          String  @id @default(uuid())
+  code        String  @unique
+  nom         String
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  classes Classe[]
+}
+
 model Etudiant {
-  id              String        @id @default(uuid())
-  userId          String        @unique
-  matriculeUnique String        @unique
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  matriculeUnique String?  @unique
   dateNaissance   DateTime
   telephone       String?
-  statutDossier   StatutDossier @default(BROUILLON)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -242,17 +263,42 @@ model DossierInscription {
   id                String            @id @default(uuid())
   etudiantId        String
   anneeId           String
+  classeId          String
   documentsFournis  String[]
   decisionScolarite DecisionScolarite @default(EN_ATTENTE)
-  dateSoumission    DateTime          @default(now())
+  statutDossier     StatutDossier     @default(BROUILLON)
+  version           Int               @default(1)
+  dateSoumission    DateTime?
+  dateValidation    DateTime?
+  validePar         String?
+  motifRejet        String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  etudiant           Etudiant           @relation(fields: [etudiantId], references: [id])
-  anneeUniversitaire AnneeUniversitaire @relation(fields: [anneeId], references: [id])
+  etudiant           Etudiant              @relation(fields: [etudiantId], references: [id])
+  anneeUniversitaire AnneeUniversitaire    @relation(fields: [anneeId], references: [id])
+  classe             Classe                @relation(fields: [classeId], references: [id])
+  validateur         Utilisateur?          @relation("DossierValidateur", fields: [validePar], references: [id])
+  history            RegistrationHistory[]
 
   @@unique([etudiantId, anneeId])
+}
+
+model RegistrationHistory {
+  id         String         @id @default(uuid())
+  dossierId  String
+  fromStatus StatutDossier?
+  toStatus   StatutDossier
+  changedBy  String
+  changedAt  DateTime       @default(now())
+  comment    String?
+
+  dossier DossierInscription @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  author  Utilisateur        @relation("HistoryAuthor", fields: [changedBy], references: [id])
+
+  @@index([dossierId, changedAt])
+  @@index([changedBy])
 }
 
 model Classe {
@@ -260,11 +306,14 @@ model Classe {
   codeClasse String @unique
   libelle    String
   niveau     String
+  filiereId  String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  inscriptions Inscription[]
+  filiere             Filiere              @relation(fields: [filiereId], references: [id])
+  inscriptions        Inscription[]
+  dossiersInscription DossierInscription[]
 }
 
 model Inscription {
@@ -452,4 +501,30 @@ model Message {
   updatedAt DateTime @updatedAt
 
   parent Parent @relation(fields: [parentId], references: [id])
+}
+
+// ----------------------------------------------------
+// 7. WORKFLOW & EVENTS
+// ----------------------------------------------------
+
+model OutboxEvent {
+  id          String            @id @default(uuid())
+  aggregateId String
+  eventType   String
+  payload     Json
+  status      OutboxEventStatus @default(PENDING)
+  createdAt   DateTime          @default(now())
+  processedAt DateTime?
+  attempts    Int               @default(0)
+  lastError   String?
+
+  @@index([status, createdAt])
+  @@index([aggregateId, eventType])
+}
+
+model ProcessedJob {
+  id          String   @id @default(uuid())
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
 }
