@@ -89,8 +89,9 @@ model Utilisateur {
   personnel     Personnel?
   parent        Parent?
 
-  dossiersValides     DossierInscription[]  @relation("DossierValidateur")
-  registrationHistory RegistrationHistory[] @relation("HistoryAuthor")
+  dossiersValides         DossierInscription[]  @relation("DossierValidateur")
+  registrationHistory     RegistrationHistory[] @relation("HistoryAuthor")
+  noteEtudiantHistoriques NoteEtudiantHistory[] @relation("NoteHistoryAuthor")
 }
 
 model Role {
@@ -207,6 +208,7 @@ model Departement {
   directeur   Personnel? @relation("DepartementDirecteur", fields: [directeurId], references: [id])
 
   personnels Personnel[] @relation("PersonnelDepartement")
+  filieres   Filiere[]
 }
 
 // ----------------------------------------------------
@@ -229,15 +231,17 @@ model AnneeUniversitaire {
 }
 
 model Filiere {
-  id          String  @id @default(uuid())
-  code        String  @unique
-  nom         String
-  description String?
+  id            String  @id @default(uuid())
+  code          String  @unique
+  nom           String
+  description   String?
+  departementId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  classes Classe[]
+  departement Departement? @relation(fields: [departementId], references: [id])
+  classes     Classe[]
 }
 
 model Etudiant {
@@ -314,6 +318,7 @@ model Classe {
   filiere             Filiere              @relation(fields: [filiereId], references: [id])
   inscriptions        Inscription[]
   dossiersInscription DossierInscription[]
+  coursScenarises     CoursClasse[]
 }
 
 model Inscription {
@@ -332,6 +337,7 @@ model Inscription {
   anneeUniversitaire AnneeUniversitaire @relation(fields: [anneeId], references: [id])
 
   frais FraisScolarite?
+  notes NoteEtudiant[]
 
   @@unique([etudiantId, anneeId])
 }
@@ -423,6 +429,77 @@ model CoursScenarise {
 
   evaluations Evaluation[]
   validations ValidationCours[]
+  classes     CoursClasse[]
+}
+
+/// Table de liaison N↔N : un cours peut être associé à plusieurs classes,
+/// une classe peut suivre plusieurs cours. Détermine les étudiants éligibles
+/// (via Classe → Inscription → Etudiant) pour la saisie de notes (PED-EVAL-01).
+model CoursClasse {
+  id       String @id @default(uuid())
+  coursId  String
+  classeId String
+
+  createdAt DateTime @default(now())
+
+  cours  CoursScenarise @relation(fields: [coursId], references: [id])
+  classe Classe         @relation(fields: [classeId], references: [id])
+
+  epreuves Epreuve[]
+
+  @@unique([coursId, classeId])
+}
+
+enum TypeEpreuve {
+  CC
+  TP
+  EXAMEN
+  RATTRAPAGE
+}
+
+model Epreuve {
+  id            String      @id @default(uuid())
+  coursClasseId String
+  type          TypeEpreuve
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  coursClasse CoursClasse    @relation(fields: [coursClasseId], references: [id])
+  notes       NoteEtudiant[]
+}
+
+model NoteEtudiant {
+  id            String  @id @default(uuid())
+  epreuveId     String
+  inscriptionId String
+  noteBrute     Decimal
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  epreuve     Epreuve     @relation(fields: [epreuveId], references: [id])
+  inscription Inscription @relation(fields: [inscriptionId], references: [id])
+
+  historique NoteEtudiantHistory[]
+
+  @@unique([epreuveId, inscriptionId])
+}
+
+model NoteEtudiantHistory {
+  id             String   @id @default(uuid())
+  noteEtudiantId String
+  ancienneValeur Decimal
+  nouvelleValeur Decimal
+  modifieParId   String
+  motif          String?
+  changedAt      DateTime @default(now())
+
+  noteEtudiant NoteEtudiant @relation(fields: [noteEtudiantId], references: [id], onDelete: Cascade)
+  modifiePar   Utilisateur  @relation("NoteHistoryAuthor", fields: [modifieParId], references: [id])
+
+  @@index([noteEtudiantId, changedAt])
+  @@index([modifieParId])
 }
 
 model ValidationCours {
