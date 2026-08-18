@@ -1,15 +1,21 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, StatutValidation } from '@prisma/client';
+import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateCoursClasseDto } from './dto/create-cours-classe.dto';
 import { ListCoursClasseQueryDto } from './dto/list-cours-classe-query.dto';
 import { CoursClasseResponseDto } from './dto/cours-classe.response.dto';
+
+/** Rôles qui voient toutes les associations, sans restriction à leurs propres cours. */
+const UNSCOPED_ROLES = ['ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT'];
 
 const COURS_CLASSE_SELECT = {
   id: true,
   coursId: true,
   classeId: true,
   createdAt: true,
+  cours: { select: { codeCours: true, titre: true } },
+  classe: { select: { codeClasse: true, libelle: true, niveau: true } },
 } satisfies Prisma.CoursClasseSelect;
 
 type CoursClasseRow = Prisma.CoursClasseGetPayload<{ select: typeof COURS_CLASSE_SELECT }>;
@@ -22,16 +28,49 @@ export class CoursClasseService {
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
-  async findAll(query: ListCoursClasseQueryDto): Promise<CoursClasseResponseDto[]> {
+  async findAll(
+    query: ListCoursClasseQueryDto,
+    user: Pick<AuthenticatedUser, 'id' | 'roles'>,
+  ): Promise<CoursClasseResponseDto[]> {
+    const scope = await this.resolveForcedEnseignantId(user);
+    if (scope.forced && scope.enseignantId === null) {
+      // ENSEIGNANT sans fiche Enseignant liée à son compte : aucun cours à afficher.
+      return [];
+    }
+    const enseignantId = scope.forced ? scope.enseignantId : query.enseignantId;
+
     const rows = await this.prisma.coursClasse.findMany({
       where: {
         coursId: query.coursId,
         classeId: query.classeId,
+        ...(enseignantId ? { cours: { enseignantId } } : {}),
       },
       select: COURS_CLASSE_SELECT,
       orderBy: { createdAt: 'desc' },
     });
     return rows.map(this.toDto);
+  }
+
+  /**
+   * Détermine si la liste doit être restreinte de force aux cours d'un seul
+   * enseignant (l'appelant lui-même) : le cas ENSEIGNANT sans rôle
+   * dispensé (ADMIN/RESPONSABLE_PEDAGOGIQUE/CHEF_DEPARTEMENT). Empêche un
+   * enseignant de consulter les cours d'un collègue via `?enseignantId=`.
+   */
+  private async resolveForcedEnseignantId(
+    user: Pick<AuthenticatedUser, 'id' | 'roles'>,
+  ): Promise<{ forced: true; enseignantId: string | null } | { forced: false }> {
+    if (user.roles.some((role) => UNSCOPED_ROLES.includes(role))) {
+      return { forced: false };
+    }
+    if (!user.roles.includes('ENSEIGNANT')) {
+      return { forced: false };
+    }
+    const enseignant = await this.prisma.enseignant.findFirst({
+      where: { personnel: { userId: user.id } },
+      select: { id: true },
+    });
+    return { forced: true, enseignantId: enseignant?.id ?? null };
   }
 
   async findOne(id: string): Promise<CoursClasseResponseDto> {
@@ -112,6 +151,11 @@ export class CoursClasseService {
       coursId: row.coursId,
       classeId: row.classeId,
       createdAt: row.createdAt,
+      coursCode: row.cours.codeCours,
+      coursTitre: row.cours.titre,
+      classeCode: row.classe.codeClasse,
+      classeLibelle: row.classe.libelle,
+      classeNiveau: row.classe.niveau,
     };
   }
 }

@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { TypeEpreuve } from '@prisma/client';
 
 export class NoteEtudiantResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -18,4 +19,25 @@ export class NoteEtudiantResponseDto {
 
   @ApiProperty()
   updatedAt: Date;
+
+  @ApiProperty({ enum: TypeEpreuve, description: 'Type de l’épreuve (via Epreuve.type)' })
+  epreuveType: TypeEpreuve;
+
+  @ApiProperty({ description: 'Code du cours (via Epreuve → CoursClasse → CoursScenarise)' })
+  coursCode: string;
+
+  @ApiProperty({ description: 'Intitulé du cours' })
+  coursTitre: string;
+
+  @ApiProperty({ description: 'Libellé de la classe (via Epreuve → CoursClasse → Classe)' })
+  classeLibelle: string;
+
+  @ApiProperty({ description: 'Nom de l’étudiant (via Inscription → Etudiant → Utilisateur)' })
+  etudiantNom: string;
+
+  @ApiProperty({ description: 'Prénom de l’étudiant' })
+  etudiantPrenom: string;
+
+  @ApiProperty({ nullable: true, description: 'Matricule de l’étudiant (peut être non attribué)' })
+  etudiantMatricule: string | null;
 }

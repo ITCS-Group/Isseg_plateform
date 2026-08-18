@@ -204,10 +204,10 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
       await service.create({ epreuveId: s1.epreuve.id, inscriptionId: insc2.id, noteBrute: 11 }, ADMIN);
       await service.create({ epreuveId: s2.epreuve.id, inscriptionId: insc1.id, noteBrute: 12 }, ADMIN);
 
-      expect(await service.findAll({})).toHaveLength(3);
-      expect(await service.findAll({ epreuveId: s1.epreuve.id })).toHaveLength(2);
-      expect(await service.findAll({ inscriptionId: insc1.id })).toHaveLength(2);
-      const combined = await service.findAll({ epreuveId: s1.epreuve.id, inscriptionId: insc1.id });
+      expect(await service.findAll({}, ADMIN)).toHaveLength(3);
+      expect(await service.findAll({ epreuveId: s1.epreuve.id }, ADMIN)).toHaveLength(2);
+      expect(await service.findAll({ inscriptionId: insc1.id }, ADMIN)).toHaveLength(2);
+      const combined = await service.findAll({ epreuveId: s1.epreuve.id, inscriptionId: insc1.id }, ADMIN);
       expect(combined).toHaveLength(1);
       expect(combined[0].id).toBe(n1.id);
     });
