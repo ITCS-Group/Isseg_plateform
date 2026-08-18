@@ -209,7 +209,7 @@ model Programme {
 model Cours {
   id              String @id @default(cuid())
   code            String @unique  // SEDU-L3-S1-101
-  intitule        String
+  titre           String  // ⚠️ le vrai modèle CoursScenarise utilise `titre`, pas `intitule` — cf. schema.prisma
   credits         Int     // Crédits ECTS
   coefficientCC   Decimal // 0.3
   coefficientTP   Decimal // 0.2
@@ -426,7 +426,7 @@ Response:
   cours: [
     {
       code: "SEDU-L3-S1-101",
-      intitule: "Psychologie de l'Éducation",
+      titre: "Psychologie de l'Éducation",
       noteFinale: 14.5,
       credits: 6,
       mention: "Bien"
