@@ -346,6 +346,21 @@ DATABASE_URL="postgresql://abdoul:azerty@localhost:5432/isseg?schema=public" \
   pnpm --filter api seed
 ```
 
+Le seed crée aussi 4 rôles applicatifs — `SCOLARITE`, `ENSEIGNANT`, `CHEF_DEPARTEMENT`,
+`RESPONSABLE_PEDAGOGIQUE` — avec des permissions minimales, ainsi qu'un compte de test
+par rôle :
+
+| Email | Rôle | Mot de passe |
+|---|---|---|
+| `scolarite@isseg.local` | SCOLARITE | `ChangeMe123!` |
+| `enseignant@isseg.local` | ENSEIGNANT | `ChangeMe123!` |
+| `chef_departement@isseg.local` | CHEF_DEPARTEMENT | `ChangeMe123!` |
+| `responsable_pedagogique@isseg.local` | RESPONSABLE_PEDAGOGIQUE | `ChangeMe123!` |
+
+⚠️ Mot de passe temporaire **partagé** — à faire tourner avant tout usage réel, ne
+jamais laisser ces comptes actifs avec ce mot de passe sur un environnement exposé.
+Le seed est idempotent (relançable sans dupliquer).
+
 ## ⚙️ Configuration
 
 ### Variables d'environnement
