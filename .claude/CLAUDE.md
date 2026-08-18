@@ -72,6 +72,14 @@ DATABASE_URL="postgresql://abdoul:azerty@localhost:5432/isseg?schema=public" ADM
 
 **Important**: The database connection requires `DATABASE_URL` environment variable. The default credentials are `abdoul:azerty@localhost:5432/isseg`.
 
+**Seeded roles & test accounts**: the seed also creates the 4 application roles already
+referenced by `@Roles()` guards in the code — `SCOLARITE`, `ENSEIGNANT`,
+`CHEF_DEPARTEMENT`, `RESPONSABLE_PEDAGOGIQUE` — with minimal permissions
+(`MANAGE_DOSSIER_INSCRIPTION`, `READ_PEDAGOGIE`, `MANAGE_PEDAGOGIE`), plus one test
+account per role: `{role}@isseg.local` (e.g. `scolarite@isseg.local`), shared temporary
+password `ChangeMe123!` — rotate before any real-world use, never rely on it outside
+dev/test environments. Seed is idempotent (safe to re-run).
+
 ### Build & Quality
 
 ```bash
