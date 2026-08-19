@@ -28,6 +28,31 @@ const TEST_ROLES = [
 // Note : aucun controller n'utilise encore @Permissions() (RBAC actuel =
 // @Roles() seul) — ces lignes préparent la donnée pour un futur usage,
 // sans changer le comportement des guards existants.
+// Rôles documentés dans CLAUDE.md mais sans module métier existant derrière
+// (Bibliothèque, Finance/RH, Innovation Numérique, Départements, portails
+// Étudiant/Parent n'existent pas encore côté code). Seedés uniquement pour
+// que l'authentification/RBAC soit testable de bout en bout — AUCUNE route
+// ne les référence dans un guard @Roles() à ce jour, donc AUCUNE permission
+// n'est créée pour eux (une permission sans route derrière n'aurait aucun
+// sens). SUPER_ADMIN : traité comme strictement identique à ADMIN pour
+// l'instant (même absence de permission qu'ADMIN aujourd'hui) — aucune
+// distinction n'existe nulle part dans le code entre les deux ; à
+// différencier plus tard si un besoin métier concret apparaît, décision
+// prise avec l'utilisateur, pas supposée.
+const AUTH_ONLY_ROLES = [
+  { nomRole: 'SUPER_ADMIN', nom: 'Super Admin', prenom: 'Test' },
+  { nomRole: 'COMPTABLE', nom: 'Comptable', prenom: 'Test' },
+  { nomRole: 'RH', nom: 'RH', prenom: 'Test' },
+  { nomRole: 'DIRECTEUR_GENERAL', nom: 'Directeur Général', prenom: 'Test' },
+  { nomRole: 'DIRECTEUR_INNOVATION', nom: 'Directeur Innovation', prenom: 'Test' },
+  { nomRole: 'RESPONSABLE_PUBLICATIONS', nom: 'Responsable Publications', prenom: 'Test' },
+  { nomRole: 'RESPONSABLE_IT', nom: 'Responsable IT', prenom: 'Test' },
+  { nomRole: 'ETUDIANT', nom: 'Étudiant', prenom: 'Test' },
+  { nomRole: 'PARENT', nom: 'Parent', prenom: 'Test' },
+  { nomRole: 'BIBLIOTHECAIRE', nom: 'Bibliothécaire', prenom: 'Test' },
+  { nomRole: 'RESPONSABLE_NUMERISATION', nom: 'Responsable Numérisation', prenom: 'Test' },
+];
+
 const TEST_PERMISSIONS: Array<{
   nomPermission: string;
   description: string;
@@ -232,6 +257,58 @@ async function main() {
     },
     { timeout: 20_000 },
   );
+
+  // ── Rôles "auth-only" (11) — sans module métier, sans permission ────────
+  // Pas de $transaction ici : chaque étape est indépendamment idempotente
+  // (upsert / find-then-create), pas besoin d'atomicité entre 11 rôles
+  // indépendants, et ça évite le risque de timeout déjà rencontré sur Neon
+  // avec un grand nombre d'allers-retours dans une seule transaction.
+  const authOnlyPasswordHash = await bcrypt.hash(TEST_PASSWORD, 10);
+
+  for (const r of AUTH_ONLY_ROLES) {
+    const role = await prisma.role.upsert({
+      where: { nomRole: r.nomRole },
+      update: {},
+      create: { nomRole: r.nomRole },
+    });
+    console.log(`✅ Role ${r.nomRole}: ${role.id}`);
+
+    const email = `${r.nomRole.toLowerCase()}@isseg.local`;
+    let authOnlyUser = await prisma.utilisateur.findUnique({ where: { email } });
+
+    if (authOnlyUser) {
+      console.log(`ℹ️  Test user already exists: ${authOnlyUser.email}`);
+    } else {
+      authOnlyUser = await prisma.utilisateur.create({
+        data: {
+          nom: r.nom,
+          prenom: r.prenom,
+          email,
+          motDePasseHash: authOnlyPasswordHash,
+          estActif: true,
+          loginAttempts: 0,
+          lockedUntil: null,
+          lastLoginAt: null,
+        },
+      });
+      console.log(`✅ Test user created: ${authOnlyUser.email}`);
+    }
+
+    const existingAuthOnlyRelation = await prisma.utilisateurRole.findUnique({
+      where: {
+        utilisateurId_roleId: { utilisateurId: authOnlyUser.id, roleId: role.id },
+      },
+    });
+
+    if (!existingAuthOnlyRelation) {
+      await prisma.utilisateurRole.create({
+        data: { utilisateurId: authOnlyUser.id, roleId: role.id },
+      });
+      console.log(`✅ Role ${r.nomRole} assigned to user ${authOnlyUser.email}`);
+    } else {
+      console.log(`ℹ️  Role ${r.nomRole} already assigned to user ${authOnlyUser.email}`);
+    }
+  }
 
   // Seed des filières de référence (idempotent via upsert sur `code`)
   const filieres = [
