@@ -33,3 +33,11 @@ dist-ssr
 # prisma
 *.db
 *.db-journal
+
+# next.js (apps/web)
+.next/
+out/
+next-env.d.ts
+
+# typescript incremental build info
+*.tsbuildinfo
