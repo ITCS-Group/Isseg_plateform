@@ -13,11 +13,14 @@ interface PrismaMock {
   coursScenarise: { findUnique: jest.Mock };
   classe: { findUnique: jest.Mock };
   epreuve: { count: jest.Mock };
+  enseignant: { findFirst: jest.Mock };
 }
 
 const COURS_ID = 'cours-1';
 const CLASSE_ID = 'classe-1';
 const ASSOCIATION_ID = 'cc-1';
+const ADMIN_USER = { id: 'admin-1', roles: ['ADMIN'] };
+const TEACHER_USER = { id: 'teacher-1', roles: ['ENSEIGNANT'] };
 
 function makeRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -25,6 +28,23 @@ function makeRow(overrides: Record<string, unknown> = {}) {
     coursId: COURS_ID,
     classeId: CLASSE_ID,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    cours: { codeCours: 'SEDU-L3-S1-101', titre: 'Psychologie de l’Éducation' },
+    classe: { codeClasse: 'SEDU-L3-A', libelle: 'Licence 3 Section A', niveau: 'L3' },
+    ...overrides,
+  };
+}
+
+function makeDto(overrides: Record<string, unknown> = {}) {
+  return {
+    id: ASSOCIATION_ID,
+    coursId: COURS_ID,
+    classeId: CLASSE_ID,
+    createdAt: makeRow().createdAt,
+    coursCode: 'SEDU-L3-S1-101',
+    coursTitre: 'Psychologie de l’Éducation',
+    classeCode: 'SEDU-L3-A',
+    classeLibelle: 'Licence 3 Section A',
+    classeNiveau: 'L3',
     ...overrides,
   };
 }
@@ -44,25 +64,62 @@ describe('CoursClasseService', () => {
       coursScenarise: { findUnique: jest.fn() },
       classe: { findUnique: jest.fn() },
       epreuve: { count: jest.fn() },
+      enseignant: { findFirst: jest.fn() },
     };
     service = new CoursClasseService(prisma as never);
   });
 
   // ── findAll ───────────────────────────────────────────────────────────────
   describe('findAll', () => {
-    it('transmet les filtres coursId/classeId à Prisma et mappe les résultats', async () => {
+    it('ADMIN : transmet les filtres coursId/classeId à Prisma et mappe les résultats enrichis', async () => {
       prisma.coursClasse.findMany.mockResolvedValue([makeRow()]);
 
-      const result = await service.findAll({ coursId: COURS_ID, classeId: undefined });
+      const result = await service.findAll({ coursId: COURS_ID, classeId: undefined }, ADMIN_USER);
 
       expect(prisma.coursClasse.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { coursId: COURS_ID, classeId: undefined },
         }),
       );
-      expect(result).toEqual([
-        { id: ASSOCIATION_ID, coursId: COURS_ID, classeId: CLASSE_ID, createdAt: makeRow().createdAt },
-      ]);
+      expect(result).toEqual([makeDto()]);
+    });
+
+    it('ADMIN avec enseignantId fourni : le filtre est transmis tel quel', async () => {
+      prisma.coursClasse.findMany.mockResolvedValue([]);
+
+      await service.findAll({ enseignantId: 'ens-42' }, ADMIN_USER);
+
+      expect(prisma.coursClasse.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ cours: { enseignantId: 'ens-42' } }),
+        }),
+      );
+    });
+
+    it('ENSEIGNANT : forcé sur son propre id, un enseignantId fourni est ignoré', async () => {
+      prisma.enseignant.findFirst.mockResolvedValue({ id: 'ens-self' });
+      prisma.coursClasse.findMany.mockResolvedValue([]);
+
+      await service.findAll({ enseignantId: 'ens-autre' }, TEACHER_USER);
+
+      expect(prisma.enseignant.findFirst).toHaveBeenCalledWith({
+        where: { personnel: { userId: TEACHER_USER.id } },
+        select: { id: true },
+      });
+      expect(prisma.coursClasse.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ cours: { enseignantId: 'ens-self' } }),
+        }),
+      );
+    });
+
+    it('ENSEIGNANT sans fiche Enseignant liée : liste vide, aucun appel findMany', async () => {
+      prisma.enseignant.findFirst.mockResolvedValue(null);
+
+      const result = await service.findAll({}, TEACHER_USER);
+
+      expect(result).toEqual([]);
+      expect(prisma.coursClasse.findMany).not.toHaveBeenCalled();
     });
   });
 

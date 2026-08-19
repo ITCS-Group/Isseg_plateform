@@ -11,4 +11,15 @@ export class ListNoteEtudiantQueryDto {
   @IsOptional()
   @IsUUID('4')
   inscriptionId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "Filtrer par UUID d'Enseignant (Enseignant.id). Ignoré et remplacé par l'enseignant " +
+      "courant si l'appelant a le rôle ENSEIGNANT (ne permet jamais de consulter les notes " +
+      "des cours d'un autre enseignant).",
+  })
+  @IsOptional()
+  @IsUUID('4')
+  enseignantId?: string;
 }

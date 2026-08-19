@@ -7,11 +7,14 @@ interface PrismaMock {
   noteEtudiant: { findMany: jest.Mock; findUnique: jest.Mock; create: jest.Mock; delete: jest.Mock };
   epreuve: { findUnique: jest.Mock };
   inscription: { findUnique: jest.Mock };
+  enseignant: { findFirst: jest.Mock };
 }
 
 const EPREUVE_ID = 'ep-1';
 const INSCRIPTION_ID = 'insc-1';
 const TEACHER_USER_ID = 'user-teacher-1';
+const ADMIN_USER = { id: 'admin-1', roles: ['ADMIN'] };
+const TEACHER_USER = { id: TEACHER_USER_ID, roles: ['ENSEIGNANT'] };
 
 function makeEpreuveWithChain(
   overrides: { statutValidation?: StatutValidation; enseignantUserId?: string } = {},
@@ -49,6 +52,39 @@ function makeCreatedRow(overrides: Record<string, unknown> = {}) {
     noteBrute: 14.5,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    epreuve: {
+      type: 'CC',
+      coursClasse: {
+        cours: { codeCours: 'SEDU-L3-S1-101', titre: 'Psychologie de l’Éducation' },
+        classe: { libelle: 'Licence 3 Section A' },
+      },
+    },
+    inscription: {
+      etudiant: {
+        matriculeUnique: 'ISSEG-2024-0123',
+        utilisateur: { nom: 'DIALLO', prenom: 'Mamadou' },
+      },
+    },
+    ...overrides,
+  };
+}
+
+function makeDto(overrides: Record<string, unknown> = {}) {
+  const base = makeCreatedRow();
+  return {
+    id: base.id,
+    epreuveId: base.epreuveId,
+    inscriptionId: base.inscriptionId,
+    noteBrute: base.noteBrute,
+    createdAt: base.createdAt,
+    updatedAt: base.updatedAt,
+    epreuveType: base.epreuve.type,
+    coursCode: base.epreuve.coursClasse.cours.codeCours,
+    coursTitre: base.epreuve.coursClasse.cours.titre,
+    classeLibelle: base.epreuve.coursClasse.classe.libelle,
+    etudiantNom: base.inscription.etudiant.utilisateur.nom,
+    etudiantPrenom: base.inscription.etudiant.utilisateur.prenom,
+    etudiantMatricule: base.inscription.etudiant.matriculeUnique,
     ...overrides,
   };
 }
@@ -64,6 +100,7 @@ describe('NoteEtudiantService — create', () => {
       noteEtudiant: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), delete: jest.fn() },
       epreuve: { findUnique: jest.fn() },
       inscription: { findUnique: jest.fn() },
+      enseignant: { findFirst: jest.fn() },
     };
     service = new NoteEtudiantService(prisma as never);
   });
@@ -189,51 +226,45 @@ describe('NoteEtudiantService — findAll', () => {
       noteEtudiant: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), delete: jest.fn() },
       epreuve: { findUnique: jest.fn() },
       inscription: { findUnique: jest.fn() },
+      enseignant: { findFirst: jest.fn() },
     };
     service = new NoteEtudiantService(prisma as never);
   });
 
-  it('1 — liste sans filtre : findMany appelé, résultats mappés via toDto', async () => {
+  it('1 — ADMIN, liste sans filtre : findMany appelé, résultats enrichis mappés via toDto', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([makeCreatedRow()]);
 
-    const result = await service.findAll({});
+    const result = await service.findAll({}, ADMIN_USER);
 
     expect(prisma.noteEtudiant.findMany).toHaveBeenCalled();
     expect(result).toHaveLength(1);
-    expect(result[0]).toEqual({
-      id: 'note-1',
-      epreuveId: EPREUVE_ID,
-      inscriptionId: INSCRIPTION_ID,
-      noteBrute: 14.5,
-      createdAt: makeCreatedRow().createdAt,
-      updatedAt: makeCreatedRow().updatedAt,
-    });
+    expect(result[0]).toEqual(makeDto());
   });
 
-  it('2 — filtre epreuveId : présent tel quel dans le where', async () => {
+  it('2 — filtre epreuveId : présent tel quel dans le where (ADMIN)', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
 
-    await service.findAll({ epreuveId: EPREUVE_ID });
+    await service.findAll({ epreuveId: EPREUVE_ID }, ADMIN_USER);
 
     expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { epreuveId: EPREUVE_ID, inscriptionId: undefined } }),
     );
   });
 
-  it('3 — filtre inscriptionId : présent tel quel dans le where', async () => {
+  it('3 — filtre inscriptionId : présent tel quel dans le where (ADMIN)', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
 
-    await service.findAll({ inscriptionId: INSCRIPTION_ID });
+    await service.findAll({ inscriptionId: INSCRIPTION_ID }, ADMIN_USER);
 
     expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { epreuveId: undefined, inscriptionId: INSCRIPTION_ID } }),
     );
   });
 
-  it('4 — filtres combinés : les deux présents simultanément dans le where', async () => {
+  it('4 — filtres combinés : les deux présents simultanément dans le where (ADMIN)', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
 
-    await service.findAll({ epreuveId: EPREUVE_ID, inscriptionId: INSCRIPTION_ID });
+    await service.findAll({ epreuveId: EPREUVE_ID, inscriptionId: INSCRIPTION_ID }, ADMIN_USER);
 
     expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { epreuveId: EPREUVE_ID, inscriptionId: INSCRIPTION_ID } }),
@@ -243,7 +274,7 @@ describe('NoteEtudiantService — findAll', () => {
   it('5 — aucun résultat : liste vide retournée, aucune exception levée', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
 
-    const result = await service.findAll({});
+    const result = await service.findAll({}, ADMIN_USER);
 
     expect(result).toEqual([]);
   });
@@ -251,16 +282,16 @@ describe('NoteEtudiantService — findAll', () => {
   it('6 — Decimal converti en number dans le DTO retourné', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([makeCreatedRow({ noteBrute: 17 })]);
 
-    const result = await service.findAll({});
+    const result = await service.findAll({}, ADMIN_USER);
 
     expect(result[0].noteBrute).toBe(17);
     expect(typeof result[0].noteBrute).toBe('number');
   });
 
-  it('7 — requête Prisma structurellement conforme (modèle, select, orderBy, pas de pagination)', async () => {
+  it('7 — requête Prisma structurellement conforme (modèle, select enrichi, orderBy, pas de pagination)', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
 
-    await service.findAll({});
+    await service.findAll({}, ADMIN_USER);
 
     expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith({
       where: { epreuveId: undefined, inscriptionId: undefined },
@@ -271,9 +302,72 @@ describe('NoteEtudiantService — findAll', () => {
         noteBrute: true,
         createdAt: true,
         updatedAt: true,
+        epreuve: {
+          select: {
+            type: true,
+            coursClasse: {
+              select: {
+                cours: { select: { codeCours: true, titre: true } },
+                classe: { select: { libelle: true } },
+              },
+            },
+          },
+        },
+        inscription: {
+          select: {
+            etudiant: {
+              select: {
+                matriculeUnique: true,
+                utilisateur: { select: { nom: true, prenom: true } },
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
+  });
+
+  it('8 — ADMIN avec enseignantId fourni : le filtre est transmis tel quel', async () => {
+    prisma.noteEtudiant.findMany.mockResolvedValue([]);
+
+    await service.findAll({ enseignantId: 'ens-42' }, ADMIN_USER);
+
+    expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          epreuve: { coursClasse: { cours: { enseignantId: 'ens-42' } } },
+        }),
+      }),
+    );
+  });
+
+  it('9 — ENSEIGNANT : forcé sur son propre id, un enseignantId fourni est ignoré', async () => {
+    prisma.enseignant.findFirst.mockResolvedValue({ id: 'ens-self' });
+    prisma.noteEtudiant.findMany.mockResolvedValue([]);
+
+    await service.findAll({ enseignantId: 'ens-autre' }, TEACHER_USER);
+
+    expect(prisma.enseignant.findFirst).toHaveBeenCalledWith({
+      where: { personnel: { userId: TEACHER_USER.id } },
+      select: { id: true },
+    });
+    expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          epreuve: { coursClasse: { cours: { enseignantId: 'ens-self' } } },
+        }),
+      }),
+    );
+  });
+
+  it('10 — ENSEIGNANT sans fiche Enseignant liée : liste vide, aucun appel findMany', async () => {
+    prisma.enseignant.findFirst.mockResolvedValue(null);
+
+    const result = await service.findAll({}, TEACHER_USER);
+
+    expect(result).toEqual([]);
+    expect(prisma.noteEtudiant.findMany).not.toHaveBeenCalled();
   });
 });
 
@@ -288,23 +382,17 @@ describe('NoteEtudiantService — findOne', () => {
       noteEtudiant: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), delete: jest.fn() },
       epreuve: { findUnique: jest.fn() },
       inscription: { findUnique: jest.fn() },
+      enseignant: { findFirst: jest.fn() },
     };
     service = new NoteEtudiantService(prisma as never);
   });
 
-  it('1 — récupération réussie : DTO complet retourné', async () => {
+  it('1 — récupération réussie : DTO complet enrichi retourné', async () => {
     prisma.noteEtudiant.findUnique.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
 
     const result = await service.findOne(NOTE_ID);
 
-    expect(result).toEqual({
-      id: NOTE_ID,
-      epreuveId: EPREUVE_ID,
-      inscriptionId: INSCRIPTION_ID,
-      noteBrute: 14.5,
-      createdAt: makeCreatedRow().createdAt,
-      updatedAt: makeCreatedRow().updatedAt,
-    });
+    expect(result).toEqual(makeDto({ id: NOTE_ID }));
   });
 
   it('2 — note inexistante → NotFoundException, aucune autre action', async () => {
@@ -325,7 +413,7 @@ describe('NoteEtudiantService — findOne', () => {
     );
   });
 
-  it('4 — requête Prisma structurellement conforme (where + select)', async () => {
+  it('4 — requête Prisma structurellement conforme (where + select enrichi)', async () => {
     prisma.noteEtudiant.findUnique.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
 
     await service.findOne(NOTE_ID);
@@ -339,6 +427,27 @@ describe('NoteEtudiantService — findOne', () => {
         noteBrute: true,
         createdAt: true,
         updatedAt: true,
+        epreuve: {
+          select: {
+            type: true,
+            coursClasse: {
+              select: {
+                cours: { select: { codeCours: true, titre: true } },
+                classe: { select: { libelle: true } },
+              },
+            },
+          },
+        },
+        inscription: {
+          select: {
+            etudiant: {
+              select: {
+                matriculeUnique: true,
+                utilisateur: { select: { nom: true, prenom: true } },
+              },
+            },
+          },
+        },
       },
     });
   });
@@ -384,12 +493,22 @@ function makeNoteWithChain(
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     epreuve: {
+      type: 'CC',
       coursClasse: {
         cours: {
+          codeCours: 'SEDU-L3-S1-101',
+          titre: 'Psychologie de l’Éducation',
           enseignant: {
             personnel: { userId: enseignantUserId },
           },
         },
+        classe: { libelle: 'Licence 3 Section A' },
+      },
+    },
+    inscription: {
+      etudiant: {
+        matriculeUnique: 'ISSEG-2024-0123',
+        utilisateur: { nom: 'DIALLO', prenom: 'Mamadou' },
       },
     },
   };

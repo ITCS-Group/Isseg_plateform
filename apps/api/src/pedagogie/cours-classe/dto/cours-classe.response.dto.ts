@@ -12,4 +12,19 @@ export class CoursClasseResponseDto {
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiProperty({ description: 'Code du cours (CoursScenarise.codeCours)', example: 'SEDU-L3-S1-101' })
+  coursCode: string;
+
+  @ApiProperty({ description: 'Intitulé du cours (CoursScenarise.titre)' })
+  coursTitre: string;
+
+  @ApiProperty({ description: 'Code de la classe (Classe.codeClasse)' })
+  classeCode: string;
+
+  @ApiProperty({ description: 'Libellé de la classe (Classe.libelle)' })
+  classeLibelle: string;
+
+  @ApiProperty({ description: 'Niveau de la classe (Classe.niveau)', example: 'L3' })
+  classeNiveau: string;
 }

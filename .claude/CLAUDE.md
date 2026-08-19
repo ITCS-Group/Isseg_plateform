@@ -27,7 +27,7 @@ This is a monorepo managed with `pnpm workspaces` and `turbo` for orchestration.
   - Global API prefix: `/api/v1`
   - Modules: `auth`, `identity` (users/roles/permissions), `common` (guards/filters/decorators)
 
-- **`apps/web`**: Frontend web application (React, Vite, TailwindCSS)
+- **`apps/web`**: Frontend web application (Next.js 14, App Router, TailwindCSS)
   - Single portal for all user roles
 
 - **`apps/worker`**: Asynchronous job processing (BullMQ/Redis)
@@ -39,6 +39,30 @@ This is a monorepo managed with `pnpm workspaces` and `turbo` for orchestration.
 - **`packages/shared`**: Shared code (Types, DTOs)
 - **`packages/ui`**: Shared React components
 - **`packages/config`**: Common configurations
+
+## Design System & UI Guidelines
+
+Design tokens live in `apps/web/tailwind.config.ts` (`theme.extend.colors`) and are used directly
+as Tailwind utility classes — the color keys **are** the token names, no `isseg-` prefix:
+
+| Token | Hex | Tailwind classes |
+|---|---|---|
+| `navy` | `#0B2559` | `bg-navy`, `text-navy`, `border-navy` |
+| `gold` | `#F2A910` | `bg-gold`, `text-gold` |
+| `page` | `#F7FAFD` | `bg-page` (fond de page) |
+| `status.green` | `#639922` | `bg-status-green`, `text-status-green` (validé) |
+| `status.orange` | `#BA7517` | `bg-status-orange`, `text-status-orange` (en attente) |
+| `status.red` | `#E24B4A` | `bg-status-red`, `text-status-red` (en retard / erreur) |
+| `status.neutral` | `#5F5E5A` | `bg-status-neutral`, `text-status-neutral` |
+
+- **Police** : Inter, chargée via `next/font/google` dans `apps/web/src/app/layout.tsx` — pas de
+  `<link>`/`@import` externe (évite le rendu bloquant et la dépendance à un CDN tiers).
+- **Composants partagés** (header, sidebar, logo…) vivent dans `packages/ui` (package `@isseg/ui`),
+  importés par `apps/web` via `transpilePackages` dans `next.config.mjs` — jamais dupliqués entre
+  écrans.
+- **Origine** : ces tokens reprennent exactement ceux de la maquette de référence Figma Make
+  "Portail de gestion académique". Ce fichier est désormais la **source de vérité** pour le code —
+  en cas de divergence future avec Figma, ce fichier fait foi, pas l'inverse.
 
 ## Development Commands
 

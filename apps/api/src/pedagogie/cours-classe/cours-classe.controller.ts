@@ -18,7 +18,9 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import { CoursClasseService } from './cours-classe.service';
 import { CreateCoursClasseDto } from './dto/create-cours-classe.dto';
 import { ListCoursClasseQueryDto } from './dto/list-cours-classe-query.dto';
@@ -35,10 +37,18 @@ export class CoursClasseController {
 
   @Get()
   @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
-  @ApiOperation({ summary: 'Lister les associations CoursClasse, filtrables par cours et/ou classe' })
+  @ApiOperation({
+    summary: 'Lister les associations CoursClasse, filtrables par cours et/ou classe',
+    description:
+      "Un appelant ENSEIGNANT ne voit que ses propres cours, quel que soit le filtre " +
+      "`enseignantId` fourni (ignoré et remplacé par son propre id).",
+  })
   @ApiResponse({ status: 200, type: [CoursClasseResponseDto] })
-  findAll(@Query() query: ListCoursClasseQueryDto): Promise<CoursClasseResponseDto[]> {
-    return this.coursClasseService.findAll(query);
+  findAll(
+    @Query() query: ListCoursClasseQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<CoursClasseResponseDto[]> {
+    return this.coursClasseService.findAll(query, user);
   }
 
   // ── POST /api/v1/cours-classes ───────────────────────────────────────────

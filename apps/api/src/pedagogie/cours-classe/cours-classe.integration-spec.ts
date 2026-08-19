@@ -10,6 +10,8 @@ const uid = (p: string) => `${p}-${Date.now()}-${seq++}`;
 let prisma: PrismaClient;
 let service: CoursClasseService;
 
+const ADMIN = { id: 'admin-int', roles: ['ADMIN'] };
+
 async function makeCoursScenarise(statutValidation: StatutValidation = StatutValidation.APPROUVE) {
   const user = await prisma.utilisateur.create({
     data: { nom: 'Ens', prenom: 'Seignant', email: uid('ens') + '@t.local', motDePasseHash: 'x' },
@@ -71,7 +73,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       await prisma.coursClasse.create({ data: { coursId: coursA.id, classeId: classeA.id } });
       await prisma.coursClasse.create({ data: { coursId: coursB.id, classeId: classeB.id } });
 
-      const result = await service.findAll({});
+      const result = await service.findAll({}, ADMIN);
 
       expect(result).toHaveLength(2);
     });
@@ -84,7 +86,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       const ccA = await prisma.coursClasse.create({ data: { coursId: coursA.id, classeId: classeA.id } });
       await prisma.coursClasse.create({ data: { coursId: coursB.id, classeId: classeB.id } });
 
-      const result = await service.findAll({ coursId: coursA.id });
+      const result = await service.findAll({ coursId: coursA.id }, ADMIN);
 
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe(ccA.id);
@@ -97,7 +99,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       await prisma.coursClasse.create({ data: { coursId: coursA.id, classeId: classeA.id } });
       const ccB = await prisma.coursClasse.create({ data: { coursId: coursB.id, classeId: classeA.id } });
 
-      const result = await service.findAll({ classeId: classeA.id });
+      const result = await service.findAll({ classeId: classeA.id }, ADMIN);
 
       expect(result).toHaveLength(2);
       expect(result.map((r) => r.id)).toEqual(expect.arrayContaining([ccB.id]));
@@ -112,7 +114,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       await prisma.coursClasse.create({ data: { coursId: coursA.id, classeId: classeB.id } });
       await prisma.coursClasse.create({ data: { coursId: coursB.id, classeId: classeA.id } });
 
-      const result = await service.findAll({ coursId: coursA.id, classeId: classeA.id });
+      const result = await service.findAll({ coursId: coursA.id, classeId: classeA.id }, ADMIN);
 
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe(ccA.id);

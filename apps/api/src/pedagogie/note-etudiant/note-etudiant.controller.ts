@@ -39,10 +39,18 @@ export class NoteEtudiantController {
 
   @Get()
   @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
-  @ApiOperation({ summary: 'Lister les notes, filtrables par épreuve et/ou inscription' })
+  @ApiOperation({
+    summary: 'Lister les notes, filtrables par épreuve et/ou inscription',
+    description:
+      "Un appelant ENSEIGNANT ne voit que les notes de ses propres cours, quel que soit le " +
+      "filtre `enseignantId` fourni (ignoré et remplacé par son propre id).",
+  })
   @ApiResponse({ status: 200, type: [NoteEtudiantResponseDto] })
-  findAll(@Query() query: ListNoteEtudiantQueryDto): Promise<NoteEtudiantResponseDto[]> {
-    return this.noteEtudiantService.findAll(query);
+  findAll(
+    @Query() query: ListNoteEtudiantQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<NoteEtudiantResponseDto[]> {
+    return this.noteEtudiantService.findAll(query, user);
   }
 
   // ── POST /api/v1/notes-etudiant ──────────────────────────────────────────

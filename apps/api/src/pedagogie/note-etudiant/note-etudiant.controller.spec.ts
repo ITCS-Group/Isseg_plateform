@@ -19,14 +19,15 @@ describe('NoteEtudiantController — GET /notes-etudiant (findAll)', () => {
     expect(roles).toEqual(['ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT']);
   });
 
-  it('transmet le ListNoteEtudiantQueryDto tel quel au service', async () => {
+  it('transmet le ListNoteEtudiantQueryDto et l’utilisateur courant tels quels au service', async () => {
     const serviceMock = { findAll: jest.fn().mockResolvedValue([]) };
     const controller = new NoteEtudiantController(serviceMock as unknown as NoteEtudiantService);
     const query = { epreuveId: 'ep-1', inscriptionId: 'insc-1' };
+    const user = { id: 'user-1', email: 'e@t.local', nom: 'N', prenom: 'P', estActif: true, roles: ['ENSEIGNANT'], permissions: [] };
 
-    await controller.findAll(query);
+    await controller.findAll(query, user);
 
-    expect(serviceMock.findAll).toHaveBeenCalledWith(query);
+    expect(serviceMock.findAll).toHaveBeenCalledWith(query, user);
   });
 });
 

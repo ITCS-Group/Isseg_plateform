@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, StatutValidation, TypeEpreuve } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -248,6 +248,165 @@ async function main() {
       create: { code: f.code, nom: f.nom },
     });
     console.log(`✅ Filière ${filiere.code}: ${filiere.nom}`);
+  }
+
+  // ── Données de démonstration : enseignant de test lié + 1 cours/classe/
+  // épreuve + 3 étudiants notés ────────────────────────────────────────────
+  // Sans ces données, le dashboard enseignant affichera une liste vide une
+  // fois branché sur l'API réelle — impossible de distinguer "ça marche
+  // mais il n'y a rien à afficher" de "ça ne marche pas".
+  const filiereSedu = await prisma.filiere.findUniqueOrThrow({ where: { code: 'SEDU' } });
+
+  const anneeDemo = await prisma.anneeUniversitaire.upsert({
+    where: { libelle: '2025-2026' },
+    update: {},
+    create: {
+      libelle: '2025-2026',
+      dateDebut: new Date('2025-09-01'),
+      dateFin: new Date('2026-07-31'),
+      estActive: true,
+    },
+  });
+  console.log(`✅ AnneeUniversitaire démo: ${anneeDemo.libelle}`);
+
+  const classeDemo = await prisma.classe.upsert({
+    where: { codeClasse: 'SEDU-L3-A' },
+    update: {},
+    create: {
+      codeClasse: 'SEDU-L3-A',
+      libelle: 'Licence 3 - Section A',
+      niveau: 'L3',
+      filiereId: filiereSedu.id,
+    },
+  });
+  console.log(`✅ Classe démo: ${classeDemo.codeClasse}`);
+
+  const enseignantTestUser = await prisma.utilisateur.findUnique({
+    where: { email: 'enseignant@isseg.local' },
+  });
+
+  if (!enseignantTestUser) {
+    console.log(
+      'ℹ️  Compte enseignant@isseg.local introuvable — étape de démo pédagogie ignorée (relancer le seed en entier).',
+    );
+  } else {
+    const personnelDemo = await prisma.personnel.upsert({
+      where: { userId: enseignantTestUser.id },
+      update: {},
+      create: {
+        userId: enseignantTestUser.id,
+        matricule: 'PERS-ENS-DEMO',
+        poste: 'Enseignant-chercheur',
+        dateEmbauche: new Date('2020-09-01'),
+        salaire: 0,
+      },
+    });
+    console.log(`✅ Personnel démo lié à enseignant@isseg.local: ${personnelDemo.matricule}`);
+
+    const enseignantDemo = await prisma.enseignant.upsert({
+      where: { personnelId: personnelDemo.id },
+      update: {},
+      create: {
+        personnelId: personnelDemo.id,
+        specialite: "Sciences de l'Éducation",
+        grade: 'Maître-Assistant',
+      },
+    });
+    console.log(`✅ Enseignant démo (lié à enseignant@isseg.local): ${enseignantDemo.id}`);
+
+    const coursDemo = await prisma.coursScenarise.upsert({
+      where: { codeCours: 'SEDU-L3-S1-101' },
+      update: {},
+      create: {
+        enseignantId: enseignantDemo.id,
+        titre: "Psychologie de l'Éducation",
+        codeCours: 'SEDU-L3-S1-101',
+        description: 'Cours de démonstration (données de seed).',
+        objectifsPedagogiques: 'Données de démonstration pour le développement du frontend.',
+        statutValidation: StatutValidation.APPROUVE,
+      },
+    });
+    console.log(`✅ CoursScenarise démo: ${coursDemo.codeCours}`);
+
+    const coursClasseDemo = await prisma.coursClasse.upsert({
+      where: { coursId_classeId: { coursId: coursDemo.id, classeId: classeDemo.id } },
+      update: {},
+      create: { coursId: coursDemo.id, classeId: classeDemo.id },
+    });
+    console.log(`✅ CoursClasse démo (${coursDemo.codeCours} × ${classeDemo.codeClasse})`);
+
+    let epreuveDemo = await prisma.epreuve.findFirst({
+      where: { coursClasseId: coursClasseDemo.id, type: TypeEpreuve.CC },
+    });
+    if (!epreuveDemo) {
+      epreuveDemo = await prisma.epreuve.create({
+        data: { coursClasseId: coursClasseDemo.id, type: TypeEpreuve.CC },
+      });
+      console.log('✅ Epreuve démo créée (CC)');
+    } else {
+      console.log('ℹ️  Epreuve démo (CC) déjà existante');
+    }
+
+    // 3 étudiants de démonstration, notés sur cette épreuve
+    const etudiantsDemo = [
+      { email: 'etudiant.demo1@isseg.local', nom: 'Démo', prenom: 'Un', matricule: 'ISSEG-DEMO-0001', note: 14.5 },
+      { email: 'etudiant.demo2@isseg.local', nom: 'Démo', prenom: 'Deux', matricule: 'ISSEG-DEMO-0002', note: 11 },
+      { email: 'etudiant.demo3@isseg.local', nom: 'Démo', prenom: 'Trois', matricule: 'ISSEG-DEMO-0003', note: 17 },
+    ];
+    const demoStudentPasswordHash = await bcrypt.hash(TEST_PASSWORD, 10);
+
+    for (const e of etudiantsDemo) {
+      let etudiantUser = await prisma.utilisateur.findUnique({ where: { email: e.email } });
+      if (!etudiantUser) {
+        etudiantUser = await prisma.utilisateur.create({
+          data: {
+            nom: e.nom,
+            prenom: e.prenom,
+            email: e.email,
+            motDePasseHash: demoStudentPasswordHash,
+            estActif: true,
+            loginAttempts: 0,
+            lockedUntil: null,
+            lastLoginAt: null,
+          },
+        });
+        console.log(`✅ Utilisateur étudiant démo créé: ${e.email}`);
+      }
+
+      const etudiantDemo = await prisma.etudiant.upsert({
+        where: { userId: etudiantUser.id },
+        update: {},
+        create: {
+          userId: etudiantUser.id,
+          matriculeUnique: e.matricule,
+          dateNaissance: new Date('2003-01-01'),
+        },
+      });
+
+      const inscriptionDemo = await prisma.inscription.upsert({
+        where: { etudiantId_anneeId: { etudiantId: etudiantDemo.id, anneeId: anneeDemo.id } },
+        update: {},
+        create: {
+          etudiantId: etudiantDemo.id,
+          classeId: classeDemo.id,
+          anneeId: anneeDemo.id,
+          estActive: true,
+        },
+      });
+
+      await prisma.noteEtudiant.upsert({
+        where: {
+          epreuveId_inscriptionId: { epreuveId: epreuveDemo.id, inscriptionId: inscriptionDemo.id },
+        },
+        update: {},
+        create: {
+          epreuveId: epreuveDemo.id,
+          inscriptionId: inscriptionDemo.id,
+          noteBrute: e.note,
+        },
+      });
+      console.log(`✅ NoteEtudiant démo: ${e.matricule} → ${e.note}/20`);
+    }
   }
 
   console.log('🎉 Seed completed successfully!');
