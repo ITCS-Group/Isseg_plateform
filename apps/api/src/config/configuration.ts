@@ -24,4 +24,19 @@ export default () => ({
     sameSite: 'strict' as const,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 jours
   },
+  bibliotheque: {
+    // Types d'Abonne autorisés à emprunter à domicile (POST /emprunts).
+    // Décision métier (entretien Groupe 4, Bibliothèque, 05/08/2026) : le prêt
+    // à domicile est réservé aux enseignants au lancement, les étudiants étant
+    // limités à la consultation sur place — extension aux étudiants prévue
+    // plus tard. Paramètre de configuration exprès (pas une règle figée en
+    // dur) pour pouvoir réactiver l'accès étudiant sans nouveau déploiement de
+    // code : ex. BIBLIOTHEQUE_EMPRUNT_DOMICILE_TYPES_AUTORISES=ENSEIGNANT,ETUDIANT_L1_L2,ETUDIANT_L3_M2
+    empruntDomicileTypesAutorises: (
+      process.env.BIBLIOTHEQUE_EMPRUNT_DOMICILE_TYPES_AUTORISES ?? 'ENSEIGNANT'
+    )
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean),
+  },
 });

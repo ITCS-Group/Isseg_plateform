@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaClient, StatutEmprunt, StatutOuvrage, StatutPaiement, StatutTransaction, TypeAbonne } from '@prisma/client';
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
 import { RegularityService } from '../../scolarite/regularity/regularity.service';
@@ -8,7 +9,12 @@ let seq = 0;
 const uid = (p: string) => `${p}-${Date.now()}-${seq++}`;
 
 let prisma: PrismaClient;
-let service: EmpruntService;
+
+/** Service avec la config par défaut : seul ENSEIGNANT emprunte à domicile. */
+function makeService(typesAutorises: string[] = ['ENSEIGNANT']) {
+  const config = new ConfigService({ bibliotheque: { empruntDomicileTypesAutorises: typesAutorises } });
+  return new EmpruntService(prisma as never, new RegularityService(prisma as never), config);
+}
 
 interface FraisOpts {
   statutPaiement?: StatutPaiement;
@@ -34,6 +40,17 @@ async function makeOuvrage(sectionId: string, exemplaires = 2) {
       sectionId,
     },
   });
+}
+
+/** Abonné ENSEIGNANT — type autorisé par défaut, pas besoin de fiche Etudiant. */
+async function makeEnseignantAbonne() {
+  const user = await prisma.utilisateur.create({
+    data: { nom: 'Ens', prenom: 'Seignant', email: uid('ens') + '@t.local', motDePasseHash: 'x' },
+  });
+  const abonne = await prisma.abonne.create({
+    data: { utilisateurId: user.id, typeAbonne: TypeAbonne.ENSEIGNANT, limiteEmprunts: 10, dureePretJours: 30 },
+  });
+  return { user, abonne };
 }
 
 /** Étudiant régulier par défaut (FraisScolarite PAYE + transaction COMPLETEE) + Abonne actif. */
@@ -88,7 +105,6 @@ async function makeEtudiantAbonne(fraisOpts: FraisOpts = {}) {
 
 beforeAll(() => {
   prisma = createTestPrisma();
-  service = new EmpruntService(prisma as never, new RegularityService(prisma as never));
 });
 
 afterAll(async () => {
@@ -100,10 +116,49 @@ beforeEach(async () => {
 });
 
 describe('Intégration — EmpruntService (isseg_test)', () => {
-  it('étudiant régulier : emprunt créé, exemplairesDisponibles décrémenté', async () => {
+  // ── Restriction prêt à domicile (décision métier 05/08/2026) ────────────────
+  describe('restriction prêt à domicile (config BIBLIOTHEQUE_EMPRUNT_DOMICILE_TYPES_AUTORISES)', () => {
+    it('étudiant régulier, config par défaut (ENSEIGNANT seul) : emprunt refusé', async () => {
+      const service = makeService();
+      const section = await makeSection();
+      const ouvrage = await makeOuvrage(section.id, 2);
+      const { user } = await makeEtudiantAbonne();
+
+      await expect(
+        service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      const ouvrageApres = await prisma.ouvrage.findUniqueOrThrow({ where: { id: ouvrage.id } });
+      expect(ouvrageApres.exemplairesDisponibles).toBe(2);
+      expect(await prisma.emprunt.count()).toBe(0);
+    });
+
+    it('ENSEIGNANT, config par défaut : emprunt créé', async () => {
+      const service = makeService();
+      const section = await makeSection();
+      const ouvrage = await makeOuvrage(section.id, 2);
+      const { user } = await makeEnseignantAbonne();
+
+      const result = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
+      expect(result.statut).toBe(StatutEmprunt.EN_COURS);
+    });
+
+    it('étudiant régulier, config étendue à ETUDIANT_L1_L2 : emprunt créé sans changement de code', async () => {
+      const service = makeService(['ENSEIGNANT', 'ETUDIANT_L1_L2']);
+      const section = await makeSection();
+      const ouvrage = await makeOuvrage(section.id, 2);
+      const { user } = await makeEtudiantAbonne();
+
+      const result = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
+      expect(result.statut).toBe(StatutEmprunt.EN_COURS);
+    });
+  });
+
+  it('ENSEIGNANT : emprunt créé, exemplairesDisponibles décrémenté', async () => {
+    const service = makeService();
     const section = await makeSection();
     const ouvrage = await makeOuvrage(section.id, 2);
-    const { user, abonne } = await makeEtudiantAbonne();
+    const { user, abonne } = await makeEnseignantAbonne();
 
     const result = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
 
@@ -118,9 +173,10 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
   });
 
   it('dernier exemplaire : ouvrage passe EMPRUNTE', async () => {
+    const service = makeService();
     const section = await makeSection();
     const ouvrage = await makeOuvrage(section.id, 1);
-    const { user } = await makeEtudiantAbonne();
+    const { user } = await makeEnseignantAbonne();
 
     await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
 
@@ -129,7 +185,8 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     expect(ouvrageApres.statut).toBe(StatutOuvrage.EMPRUNTE);
   });
 
-  it('étudiant non régulier (frais EN_ATTENTE) : emprunt refusé, aucune écriture', async () => {
+  it('étudiant non régulier (frais EN_ATTENTE), config étendue : emprunt refusé pour cause de régularité, pas de type', async () => {
+    const service = makeService(['ENSEIGNANT', 'ETUDIANT_L1_L2']);
     const section = await makeSection();
     const ouvrage = await makeOuvrage(section.id, 2);
     const { user } = await makeEtudiantAbonne({ statutPaiement: StatutPaiement.EN_ATTENTE });
@@ -144,11 +201,12 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     expect(empruntsCount).toBe(0);
   });
 
-  it('quota atteint (3 emprunts en cours pour un ETUDIANT_L1_L2) : refus', async () => {
+  it('quota atteint (10 emprunts en cours pour un ENSEIGNANT) : refus', async () => {
+    const service = makeService();
     const section = await makeSection();
-    const { user } = await makeEtudiantAbonne();
+    const { user } = await makeEnseignantAbonne();
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 10; i++) {
       const o = await makeOuvrage(section.id, 1);
       await service.create({ ouvrageId: o.id, emprunteurId: user.id });
     }
@@ -157,13 +215,14 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     await expect(
       service.create({ ouvrageId: ouvrageSupplementaire.id, emprunteurId: user.id }),
     ).rejects.toBeInstanceOf(ConflictException);
-  });
+  }, 30_000);
 
   it('aucun exemplaire disponible : refus', async () => {
+    const service = makeService();
     const section = await makeSection();
     const ouvrage = await makeOuvrage(section.id, 1);
-    const { user: user1 } = await makeEtudiantAbonne();
-    const { user: user2 } = await makeEtudiantAbonne();
+    const { user: user1 } = await makeEnseignantAbonne();
+    const { user: user2 } = await makeEnseignantAbonne();
 
     await service.create({ ouvrageId: ouvrage.id, emprunteurId: user1.id });
     await expect(
@@ -172,13 +231,14 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
   });
 
   it('retour : exemplairesDisponibles réincrémenté, statut RETOURNE, retardJours calculé', async () => {
+    const service = makeService();
     const section = await makeSection();
     const ouvrage = await makeOuvrage(section.id, 1);
-    const { user } = await makeEtudiantAbonne();
+    const { user } = await makeEnseignantAbonne();
 
     const emprunt = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
 
-    // Retour anticipé (dateRetourPrevue dans 14 jours) → pas de retard
+    // Retour anticipé (dateRetourPrevue dans 30 jours) → pas de retard
     const retour = await service.retour(emprunt.id);
 
     expect(retour.statut).toBe(StatutEmprunt.RETOURNE);
@@ -191,9 +251,10 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
   });
 
   it('retour en retard : dateRetourPrevue forcée dans le passé → retardJours > 0', async () => {
+    const service = makeService();
     const section = await makeSection();
     const ouvrage = await makeOuvrage(section.id, 1);
-    const { user } = await makeEtudiantAbonne();
+    const { user } = await makeEnseignantAbonne();
 
     const emprunt = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
     await prisma.emprunt.update({

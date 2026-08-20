@@ -298,6 +298,13 @@ this table supersedes any earlier simplified "3 loans / 14 days" wording.
 | Personnel Admin | 14 days | 3 items | 1x |
 
 - Late returns trigger automatic notifications and account holds
+- **Home loans (`POST /emprunts`) are restricted to `ENSEIGNANT` at launch** —
+  students are limited to on-site catalog consultation (`GET /ouvrages`) and
+  reservations (`POST /reservations`), per the Bibliothèque lead interview
+  (Groupe 4, 2026-08-05). Enforced via the `BIBLIOTHEQUE_EMPRUNT_DOMICILE_TYPES_AUTORISES`
+  config value (`empruntDomicileTypesAutorises` in `configuration.ts`), not a
+  hardcoded check — extending home loans to students is a config change
+  (add `ETUDIANT_L1_L2`/`ETUDIANT_L3_M2`), not a new code chantier.
 
 ## Important Notes
 
