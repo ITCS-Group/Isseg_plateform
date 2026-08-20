@@ -10,6 +10,7 @@ import { RegistrationWorkflowService } from './registration-workflow.service';
 interface TxMock {
   dossierInscription: { findUnique: jest.Mock; updateMany: jest.Mock };
   etudiant: { update: jest.Mock };
+  abonne: { upsert: jest.Mock };
   registrationHistory: { create: jest.Mock };
   outboxEvent: { create: jest.Mock };
   $queryRaw: jest.Mock;
@@ -25,8 +26,9 @@ function makeDossier(overrides: Record<string, unknown> = {}) {
     classeId: 'classe-1',
     statutDossier: StatutDossier.BROUILLON,
     version: 1,
-    etudiant: { id: 'etu-1', matriculeUnique: null as string | null },
+    etudiant: { id: 'etu-1', matriculeUnique: null as string | null, userId: 'user-etu-1' },
     anneeUniversitaire: { id: 'annee-1', dateDebut: new Date(Date.UTC(2026, 8, 1)) },
+    classe: { niveau: 'L1' },
     ...overrides,
   };
 }
@@ -40,6 +42,7 @@ describe('RegistrationWorkflowService', () => {
     tx = {
       dossierInscription: { findUnique: jest.fn(), updateMany: jest.fn() },
       etudiant: { update: jest.fn() },
+      abonne: { upsert: jest.fn() },
       registrationHistory: { create: jest.fn() },
       outboxEvent: { create: jest.fn() },
       $queryRaw: jest.fn(),
@@ -47,6 +50,7 @@ describe('RegistrationWorkflowService', () => {
     // Défauts "happy path"
     tx.dossierInscription.updateMany.mockResolvedValue({ count: 1 });
     tx.etudiant.update.mockResolvedValue({});
+    tx.abonne.upsert.mockResolvedValue({});
     tx.registrationHistory.create.mockResolvedValue({});
     tx.outboxEvent.create.mockResolvedValue({});
     tx.$queryRaw.mockResolvedValue([{ seq: '1' }]);
@@ -64,6 +68,7 @@ describe('RegistrationWorkflowService', () => {
   function expectNoWrites() {
     expect(tx.dossierInscription.updateMany).not.toHaveBeenCalled();
     expect(tx.etudiant.update).not.toHaveBeenCalled();
+    expect(tx.abonne.upsert).not.toHaveBeenCalled();
     expect(tx.registrationHistory.create).not.toHaveBeenCalled();
     expect(tx.outboxEvent.create).not.toHaveBeenCalled();
     expect(tx.$queryRaw).not.toHaveBeenCalled();
@@ -209,6 +214,8 @@ describe('RegistrationWorkflowService', () => {
       // Pas de matricule pour T1
       expect(tx.$queryRaw).not.toHaveBeenCalled();
       expect(outboxData().payload.matricule).toBeUndefined();
+      // Pas d'auto-abonnement hors transition vers INSCRIT
+      expect(tx.abonne.upsert).not.toHaveBeenCalled();
     });
   });
 
@@ -231,6 +238,7 @@ describe('RegistrationWorkflowService', () => {
       expect(tx.outboxEvent.create).toHaveBeenCalledTimes(1);
       expect(outboxData().eventType).toBe('DossierInscriptionProcessing');
       expect(tx.$queryRaw).not.toHaveBeenCalled();
+      expect(tx.abonne.upsert).not.toHaveBeenCalled();
     });
   });
 
@@ -241,7 +249,7 @@ describe('RegistrationWorkflowService', () => {
         makeDossier({
           statutDossier: StatutDossier.EN_TRAITEMENT,
           version: 4,
-          etudiant: { id: 'etu-1', matriculeUnique: null },
+          etudiant: { id: 'etu-1', matriculeUnique: null, userId: 'user-etu-1' },
         }),
       );
       const res = await service.register('dossier-1', ACTOR, { expectedVersion: 4 });
@@ -269,6 +277,13 @@ describe('RegistrationWorkflowService', () => {
         toStatus: StatutDossier.INSCRIT,
         matricule: 'ISSEG-2026-0001',
       });
+
+      // Auto-abonnement Bibliothèque : niveau L1 (défaut fixture) → ETUDIANT_L1_L2
+      expect(tx.abonne.upsert).toHaveBeenCalledTimes(1);
+      expect(tx.abonne.upsert.mock.calls[0][0]).toMatchObject({
+        where: { utilisateurId: 'user-etu-1' },
+        create: { utilisateurId: 'user-etu-1', typeAbonne: 'ETUDIANT_L1_L2', limiteEmprunts: 3, dureePretJours: 14 },
+      });
     });
 
     it('matricule existant : aucun nextval, matricule conservé', async () => {
@@ -276,7 +291,7 @@ describe('RegistrationWorkflowService', () => {
         makeDossier({
           statutDossier: StatutDossier.EN_TRAITEMENT,
           version: 4,
-          etudiant: { id: 'etu-1', matriculeUnique: 'ISSEG-2025-0007' },
+          etudiant: { id: 'etu-1', matriculeUnique: 'ISSEG-2025-0007', userId: 'user-etu-1' },
         }),
       );
       const res = await service.register('dossier-1', ACTOR, { expectedVersion: 4 });
@@ -285,6 +300,25 @@ describe('RegistrationWorkflowService', () => {
       expect(tx.etudiant.update).not.toHaveBeenCalled();
       expect(res.matricule).toBe('ISSEG-2025-0007');
       expect(outboxData().payload.matricule).toBe('ISSEG-2025-0007');
+      // Réinscription : l'auto-abonnement reste appelé (idempotent via upsert)
+      expect(tx.abonne.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('niveau L3 → typeAbonne ETUDIANT_L3_M2, quota/durée correspondants', async () => {
+      tx.dossierInscription.findUnique.mockResolvedValue(
+        makeDossier({
+          statutDossier: StatutDossier.EN_TRAITEMENT,
+          version: 4,
+          etudiant: { id: 'etu-1', matriculeUnique: null, userId: 'user-etu-1' },
+          classe: { niveau: 'L3' },
+        }),
+      );
+      await service.register('dossier-1', ACTOR, { expectedVersion: 4 });
+
+      expect(tx.abonne.upsert.mock.calls[0][0]).toMatchObject({
+        where: { utilisateurId: 'user-etu-1' },
+        create: { utilisateurId: 'user-etu-1', typeAbonne: 'ETUDIANT_L3_M2', limiteEmprunts: 5, dureePretJours: 21 },
+      });
     });
 
     it.each([
@@ -347,6 +381,7 @@ describe('RegistrationWorkflowService', () => {
       // Pas de matricule pour un rejet
       expect(tx.$queryRaw).not.toHaveBeenCalled();
       expect(outboxData().payload.matricule).toBeUndefined();
+      expect(tx.abonne.upsert).not.toHaveBeenCalled();
     });
   });
 

@@ -6,10 +6,12 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './auth/guards/permissions.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { BibliothequeModule } from './bibliotheque/bibliotheque.module';
 import configuration from './config/configuration';
 import { PrismaModule } from './database/prisma/prisma.module';
 import { IdentityModule } from './identity/identity.module';
 import { PedagogieModule } from './pedagogie/pedagogie.module';
+import { RegularityModule } from './scolarite/regularity/regularity.module';
 import { RegistrationModule } from './scolarite/registration/registration.module';
 
 @Module({
@@ -36,8 +38,14 @@ import { RegistrationModule } from './scolarite/registration/registration.module
     // ── Domaine : Scolarité — workflow d'inscription ───────────────────────
     RegistrationModule,
 
+    // ── Domaine : Scolarité — statut de régularité (contrat inter-modules) ──
+    RegularityModule,
+
     // ── Domaine : Pédagogie ──────────────────────────────────────────────────
     PedagogieModule,
+
+    // ── Domaine : Bibliothèque ───────────────────────────────────────────────
+    BibliothequeModule,
   ],
   controllers: [],
   providers: [

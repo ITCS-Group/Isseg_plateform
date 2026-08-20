@@ -17,6 +17,17 @@ const TEST_ROLES = [
   { nomRole: 'ENSEIGNANT', nom: 'Enseignant', prenom: 'Test' },
   { nomRole: 'CHEF_DEPARTEMENT', nom: 'Chef Département', prenom: 'Test' },
   { nomRole: 'RESPONSABLE_PEDAGOGIQUE', nom: 'Responsable Pédagogique', prenom: 'Test' },
+  // Bibliothèque (chantier feature/bibliotheque) : ces 4 rôles ont désormais
+  // de vraies routes @Roles() derrière eux (ouvrages/emprunts/réservations/
+  // documents-académiques/abonnés) — déplacés depuis AUTH_ONLY_ROLES pour
+  // BIBLIOTHECAIRE/RESPONSABLE_NUMERISATION/ETUDIANT (même raisonnement que
+  // les 4 rôles ci-dessus). RESPONSABLE_BIBLIOTHEQUE est un rôle nouveau
+  // (décision utilisateur du 19/08 : distinct de BIBLIOTHECAIRE/ADMIN,
+  // supervision générale/acquisitions/budget).
+  { nomRole: 'BIBLIOTHECAIRE', nom: 'Bibliothécaire', prenom: 'Test' },
+  { nomRole: 'RESPONSABLE_NUMERISATION', nom: 'Responsable Numérisation', prenom: 'Test' },
+  { nomRole: 'RESPONSABLE_BIBLIOTHEQUE', nom: 'Responsable Bibliothèque', prenom: 'Test' },
+  { nomRole: 'ETUDIANT', nom: 'Étudiant', prenom: 'Test' },
 ];
 
 // Permissions minimales, alignées sur les @Roles() déjà en place :
@@ -47,10 +58,7 @@ const AUTH_ONLY_ROLES = [
   { nomRole: 'DIRECTEUR_INNOVATION', nom: 'Directeur Innovation', prenom: 'Test' },
   { nomRole: 'RESPONSABLE_PUBLICATIONS', nom: 'Responsable Publications', prenom: 'Test' },
   { nomRole: 'RESPONSABLE_IT', nom: 'Responsable IT', prenom: 'Test' },
-  { nomRole: 'ETUDIANT', nom: 'Étudiant', prenom: 'Test' },
   { nomRole: 'PARENT', nom: 'Parent', prenom: 'Test' },
-  { nomRole: 'BIBLIOTHECAIRE', nom: 'Bibliothécaire', prenom: 'Test' },
-  { nomRole: 'RESPONSABLE_NUMERISATION', nom: 'Responsable Numérisation', prenom: 'Test' },
 ];
 
 const TEST_PERMISSIONS: Array<{
@@ -73,6 +81,21 @@ const TEST_PERMISSIONS: Array<{
     nomPermission: 'MANAGE_PEDAGOGIE',
     description: 'Créer/modifier les cours-classes, épreuves et notes des étudiants',
     roles: ['ENSEIGNANT', 'RESPONSABLE_PEDAGOGIQUE'],
+  },
+  {
+    nomPermission: 'MANAGE_BIBLIOTHEQUE',
+    description: 'Gérer le catalogue, les emprunts et les abonnés de la Bibliothèque',
+    roles: ['BIBLIOTHECAIRE', 'RESPONSABLE_BIBLIOTHEQUE'],
+  },
+  {
+    nomPermission: 'MANAGE_NUMERISATION',
+    description: 'Cataloguer et diffuser les documents académiques numérisés (thèses/mémoires)',
+    roles: ['RESPONSABLE_NUMERISATION'],
+  },
+  {
+    nomPermission: 'READ_BIBLIOTHEQUE',
+    description: 'Consulter le catalogue, emprunter et réserver des ouvrages',
+    roles: ['ETUDIANT', 'ENSEIGNANT'],
   },
 ];
 
@@ -325,6 +348,26 @@ async function main() {
       create: { code: f.code, nom: f.nom },
     });
     console.log(`✅ Filière ${filiere.code}: ${filiere.nom}`);
+  }
+
+  // Seed des sections Bibliothèque de référence (idempotent via upsert sur
+  // `code`) — mêmes 3 catégories physiques qu'agent-bibliotheque.md §2
+  // (Ouvrages Généraux/Périodiques/Numérique), nécessaires à tout POST
+  // /ouvrages (sectionId obligatoire). Pas d'endpoint CRUD dédié pour
+  // l'instant (décision utilisateur du 19/08) — même pattern que `filieres`.
+  const sectionsBibliotheque = [
+    { code: 'OG', nom: 'Ouvrages Généraux' },
+    { code: 'PER', nom: 'Périodiques' },
+    { code: 'NUM', nom: 'Numérique' },
+  ];
+
+  for (const s of sectionsBibliotheque) {
+    const section = await prisma.sectionBibliotheque.upsert({
+      where: { code: s.code },
+      update: { nom: s.nom },
+      create: { code: s.code, nom: s.nom },
+    });
+    console.log(`✅ SectionBibliotheque ${section.code}: ${section.nom}`);
   }
 
   // ── Données de démonstration : enseignant de test lié + 1 cours/classe/

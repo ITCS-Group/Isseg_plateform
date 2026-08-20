@@ -92,6 +92,9 @@ model Utilisateur {
   dossiersValides         DossierInscription[]  @relation("DossierValidateur")
   registrationHistory     RegistrationHistory[] @relation("HistoryAuthor")
   noteEtudiantHistoriques NoteEtudiantHistory[] @relation("NoteHistoryAuthor")
+
+  emprunts Emprunt[]
+  abonne   Abonne?
 }
 
 model Role {
@@ -261,6 +264,8 @@ model Etudiant {
   carnetSuivi  CarnetSuivi?
 
   parents Parent[] @relation("ParentEtudiant")
+
+  documentsAcademiques DocumentAcademique[]
 }
 
 model DossierInscription {
@@ -399,6 +404,8 @@ model Enseignant {
 
   coursScenarises CoursScenarise[]
   evaluations     Evaluation[]
+
+  documentsDiriges DocumentAcademique[]
 }
 
 model ResponsablePedagogique {
@@ -604,4 +611,168 @@ model ProcessedJob {
   processedAt DateTime @default(now())
 
   @@index([processedAt])
+}
+
+// ----------------------------------------------------
+// 8. BIBLIOTHÈQUE
+// ----------------------------------------------------
+
+enum StatutOuvrage {
+  DISPONIBLE
+  EMPRUNTE
+  RESERVE
+  EN_MAINTENANCE
+  PERDU
+}
+
+enum StatutEmprunt {
+  EN_COURS
+  RETOURNE
+  EN_RETARD
+  PERDU
+}
+
+/// Catégorie d'abonné — détermine les règles d'emprunt (durée, quota,
+/// renouvellements) selon le tableau à 4 catégories d'agent-bibliotheque.md
+/// §3.1 (source de vérité, cf. CLAUDE.md § Library Loans).
+enum TypeAbonne {
+  ETUDIANT_L1_L2
+  ETUDIANT_L3_M2
+  ENSEIGNANT
+  PERSONNEL_ADMIN
+}
+
+enum TypeDocumentAcademique {
+  THESE
+  MEMOIRE_LICENCE
+  MEMOIRE_MASTER
+}
+
+enum StatutReservation {
+  EN_ATTENTE
+  HONOREE
+  EXPIREE
+  ANNULEE
+}
+
+model SectionBibliotheque {
+  id          String  @id @default(uuid())
+  code        String  @unique
+  nom         String
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ouvrages Ouvrage[]
+}
+
+model Ouvrage {
+  id                     String        @id @default(uuid())
+  isbn                   String?       @unique
+  titre                  String
+  auteur                 String
+  editeur                String
+  anneeEdition           Int
+  cote                   String        @unique
+  classificationDewey    String?
+  matieres               String[]
+  salle                  String
+  etagere                String
+  nombreExemplaires      Int           @default(1)
+  exemplairesDisponibles Int           @default(1)
+  statut                 StatutOuvrage @default(DISPONIBLE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sectionId String
+  section   SectionBibliotheque @relation(fields: [sectionId], references: [id])
+
+  emprunts     Emprunt[]
+  reservations Reservation[]
+}
+
+/// Pas de champ matricule dupliqué : l'emprunteur est un Utilisateur, et le
+/// matricule (s'il existe) se retrouve via emprunteur.etudiant.matriculeUnique.
+model Emprunt {
+  id                      String        @id @default(uuid())
+  ouvrageId               String
+  emprunteurId            String
+  dateEmprunt             DateTime      @default(now())
+  dateRetourPrevue        DateTime
+  dateRetourEffectif      DateTime?
+  renouvellementsRestants Int           @default(1)
+  statut                  StatutEmprunt @default(EN_COURS)
+  retardJours             Int           @default(0)
+  montantPenalite         Decimal       @default(0)
+  penalitesPayees         Boolean       @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ouvrage    Ouvrage     @relation(fields: [ouvrageId], references: [id])
+  emprunteur Utilisateur @relation(fields: [emprunteurId], references: [id])
+
+  @@index([emprunteurId])
+  @@index([ouvrageId])
+}
+
+model Abonne {
+  id             String     @id @default(uuid())
+  utilisateurId  String     @unique
+  typeAbonne     TypeAbonne
+  dateDebut      DateTime   @default(now())
+  dateFin        DateTime?
+  statutActif    Boolean    @default(true)
+  limiteEmprunts Int?
+  dureePretJours Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  utilisateur  Utilisateur   @relation(fields: [utilisateurId], references: [id])
+  reservations Reservation[]
+}
+
+model DocumentAcademique {
+  id                    String                 @id @default(uuid())
+  type                  TypeDocumentAcademique
+  titre                 String
+  anneeUniversitaire    String
+  filiere               String
+  niveau                String
+  urlPdf                String
+  motsCles              String[]
+  resume                String
+  diffusionAutorisee    Boolean                @default(false)
+  embargoJusqua         DateTime?
+  nombreTelechargements Int                    @default(0)
+  nombreVues            Int                    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auteurId String
+  auteur   Etudiant @relation(fields: [auteurId], references: [id])
+
+  directeurMemoireId String?
+  directeurMemoire   Enseignant? @relation(fields: [directeurMemoireId], references: [id])
+}
+
+model Reservation {
+  id              String            @id @default(uuid())
+  ouvrageId       String
+  abonneId        String
+  dateReservation DateTime          @default(now())
+  statut          StatutReservation @default(EN_ATTENTE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ouvrage Ouvrage @relation(fields: [ouvrageId], references: [id])
+  abonne  Abonne  @relation(fields: [abonneId], references: [id])
+
+  @@index([ouvrageId])
+  @@index([abonneId])
 }

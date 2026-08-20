@@ -26,10 +26,7 @@ attendu, pas un bug.
 | `DIRECTEUR_INNOVATION` | `directeur_innovation@isseg.local` | Innovation Numérique | Non implémenté (agent `agent-innovation-numerique.md` non committé, non arbitré) |
 | `RESPONSABLE_PUBLICATIONS` | `responsable_publications@isseg.local` | Innovation Numérique (Éditions) | Non implémenté |
 | `RESPONSABLE_IT` | `responsable_it@isseg.local` | Innovation Numérique (Support Informatique) | Non implémenté |
-| `ETUDIANT` | `etudiant@isseg.local` | Portail Étudiant | Non implémenté (aucune page frontend, aucune route backend dédiée) |
 | `PARENT` | `parent@isseg.local` | Portail Parent | Non implémenté |
-| `BIBLIOTHECAIRE` | `bibliothecaire@isseg.local` | Bibliothèque | Non implémenté (aucun code) |
-| `RESPONSABLE_NUMERISATION` | `responsable_numerisation@isseg.local` | Bibliothèque (numérisation) | Non implémenté |
 
 Mot de passe de tous les comptes ci-dessus : identique au reste des comptes de
 test (`ChangeMe123!`, temporaire — cf. `apps/api/prisma/seed.ts`).
@@ -43,6 +40,10 @@ test (`ChangeMe123!`, temporaire — cf. `apps/api/prisma/seed.ts`).
 | `ENSEIGNANT` | Pédagogie (cours/notes) | ✅ Livré (backend + frontend `/teacher`) |
 | `CHEF_DEPARTEMENT` | Pédagogie (lecture seule) | Backend livré (lecture), aucun écran dédié |
 | `RESPONSABLE_PEDAGOGIQUE` | Pédagogie (lecture + écriture) | Backend livré, aucun écran dédié |
+| `BIBLIOTHECAIRE` | Bibliothèque (catalogue, emprunts, abonnés) | ✅ Backend livré (`feature/bibliotheque`, 19-20/08) : `SectionBibliotheque`/`Ouvrage`/`Emprunt`/`Abonne`/`DocumentAcademique`/`Reservation`, endpoints `/ouvrages`, `/emprunts`(+`/retour`), `/abonnes`, `/bibliotheque/stats/dashboard`. Aucun écran frontend. |
+| `RESPONSABLE_BIBLIOTHEQUE` | Bibliothèque (supervision — mêmes routes que BIBLIOTHECAIRE) | ✅ Backend livré (même chantier) — rôle distinct, pas fusionné dans `BIBLIOTHECAIRE`/`ADMIN` (décision explicite). Compte de test : `responsable_bibliotheque@isseg.local`. Aucun écran frontend. |
+| `RESPONSABLE_NUMERISATION` | Bibliothèque (documents académiques — thèses/mémoires) | ✅ Backend livré (même chantier) : `/documents-academiques` (CRUD, visibilité conditionnée à `diffusionAutorisee`/embargo). Aucun écran frontend. |
+| `ETUDIANT` | Bibliothèque (lecture catalogue, emprunt, réservation) | ✅ Backend livré (même chantier) pour la partie Bibliothèque uniquement : `GET /ouvrages`, `GET /emprunts` (scopé à ses propres emprunts), `POST /reservations`, lecture `/documents-academiques` diffusés. Le **Portail Étudiant** plus large (profil, notes, autres documents) reste non implémenté — aucun écran frontend dans les deux cas. |
 
 ## Règle de mise à jour
 

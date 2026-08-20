@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, StatutDossier } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { TYPE_ABONNE_RULES, typeAbonneFromNiveau } from '../../bibliotheque/common/loan-rules.constants';
 import { RejectDossierDto } from './dto/reject-dossier.dto';
 import { TransitionDto } from './dto/transition.dto';
 import { RegistrationOutboxPayload, TransitionOptions, TransitionResult } from './registration.types';
@@ -14,8 +15,9 @@ import { isTransitionAllowed, TRANSITION_EVENT_TYPE } from './state-machine';
 
 // ── Sélection Prisma : dossier + relations nécessaires à la transition ───────
 const DOSSIER_INCLUDE = {
-  etudiant: { select: { id: true, matriculeUnique: true } },
+  etudiant: { select: { id: true, matriculeUnique: true, userId: true } },
   anneeUniversitaire: { select: { id: true, dateDebut: true } },
+  classe: { select: { niveau: true } },
 } satisfies Prisma.DossierInscriptionInclude;
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -164,6 +166,23 @@ export class RegistrationWorkflowService {
             // Réinscription : conserver le matricule, ne PAS consommer la séquence
             matricule = dossier.etudiant.matriculeUnique;
           }
+
+          // Auto-abonnement Bibliothèque (décision #6 — appel direct, même
+          // transaction, pas d'event-emitter). Idempotent : upsert sur
+          // utilisateurId (contrainte unique), ne réattribue pas les quotas
+          // déjà personnalisés si l'Abonne existe déjà (ex. réinscription).
+          const typeAbonne = typeAbonneFromNiveau(dossier.classe.niveau);
+          const rule = TYPE_ABONNE_RULES[typeAbonne];
+          await tx.abonne.upsert({
+            where: { utilisateurId: dossier.etudiant.userId },
+            update: {},
+            create: {
+              utilisateurId: dossier.etudiant.userId,
+              typeAbonne,
+              limiteEmprunts: rule.limiteEmprunts,
+              dureePretJours: rule.dureePretJours,
+            },
+          });
         }
 
         // 6. RegistrationHistory : exactement 1 entrée
