@@ -108,7 +108,7 @@ ENSEIGNANT → SECTION → COMITÉ PROGRAMME → CONSEIL DÉPARTEMENT → COMMIS
    - Décisions sur les cas particuliers (rattrapages, dispenses)
    - Génération des PV de délibération
 
-4. **Commission Pédagogique** (Responsable Pédagogique)
+4. **Commission Pédagogique** (DGA Études)
    - Supervision pédagogique inter-départements
    - Harmonisation des pratiques de notation
    - Droit de veto sur toutes les notes
@@ -347,7 +347,7 @@ DATABASE_URL="postgresql://abdoul:azerty@localhost:5432/isseg?schema=public" \
 ```
 
 Le seed crée aussi 4 rôles applicatifs — `SCOLARITE`, `ENSEIGNANT`, `CHEF_DEPARTEMENT`,
-`RESPONSABLE_PEDAGOGIQUE` — avec des permissions minimales, ainsi qu'un compte de test
+`DGA_ETUDES` — avec des permissions minimales, ainsi qu'un compte de test
 par rôle :
 
 | Email | Rôle | Mot de passe |
@@ -355,7 +355,7 @@ par rôle :
 | `scolarite@isseg.local` | SCOLARITE | `ChangeMe123!` |
 | `enseignant@isseg.local` | ENSEIGNANT | `ChangeMe123!` |
 | `chef_departement@isseg.local` | CHEF_DEPARTEMENT | `ChangeMe123!` |
-| `responsable_pedagogique@isseg.local` | RESPONSABLE_PEDAGOGIQUE | `ChangeMe123!` |
+| `dga_etudes@isseg.local` | DGA_ETUDES | `ChangeMe123!` |
 
 ⚠️ Mot de passe temporaire **partagé** — à faire tourner avant tout usage réel, ne
 jamais laisser ces comptes actifs avec ce mot de passe sur un environnement exposé.

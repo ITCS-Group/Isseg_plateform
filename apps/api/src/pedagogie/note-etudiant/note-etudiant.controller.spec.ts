@@ -14,9 +14,9 @@ describe('NoteEtudiantController — GET /notes-etudiant (findAll)', () => {
     expect(typeof NoteEtudiantController.prototype.findAll).toBe('function');
   });
 
-  it('@Roles() de findAll : ADMIN, RESPONSABLE_PEDAGOGIQUE, CHEF_DEPARTEMENT, ENSEIGNANT', () => {
+  it('@Roles() de findAll : ADMIN, DGA_ETUDES, CHEF_DEPARTEMENT, ENSEIGNANT', () => {
     const roles = reflector.get<string[]>(ROLES_KEY, NoteEtudiantController.prototype.findAll);
-    expect(roles).toEqual(['ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT']);
+    expect(roles).toEqual(['ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT', 'ENSEIGNANT']);
   });
 
   it('transmet le ListNoteEtudiantQueryDto et l’utilisateur courant tels quels au service', async () => {
@@ -45,9 +45,9 @@ describe('NoteEtudiantController — GET /notes-etudiant/:id (findOne)', () => {
     expect(typeof NoteEtudiantController.prototype.findOne).toBe('function');
   });
 
-  it('@Roles() de findOne : ADMIN, RESPONSABLE_PEDAGOGIQUE, CHEF_DEPARTEMENT, ENSEIGNANT', () => {
+  it('@Roles() de findOne : ADMIN, DGA_ETUDES, CHEF_DEPARTEMENT, ENSEIGNANT', () => {
     const roles = reflector.get<string[]>(ROLES_KEY, NoteEtudiantController.prototype.findOne);
-    expect(roles).toEqual(['ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT']);
+    expect(roles).toEqual(['ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT', 'ENSEIGNANT']);
   });
 
   it('transmet l’id exactement tel que reçu au service', async () => {
@@ -71,9 +71,9 @@ describe('NoteEtudiantController — PATCH /notes-etudiant/:id (update)', () => 
     expect(typeof NoteEtudiantController.prototype.update).toBe('function');
   });
 
-  it('@Roles() de update : ADMIN, RESPONSABLE_PEDAGOGIQUE, ENSEIGNANT', () => {
+  it('@Roles() de update : ADMIN, DGA_ETUDES, ENSEIGNANT', () => {
     const roles = reflector.get<string[]>(ROLES_KEY, NoteEtudiantController.prototype.update);
-    expect(roles).toEqual(['ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'ENSEIGNANT']);
+    expect(roles).toEqual(['ADMIN', 'DGA_ETUDES', 'ENSEIGNANT']);
   });
 
   it('transmet id, DTO et utilisateur courant exactement au service', async () => {

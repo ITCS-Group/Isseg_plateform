@@ -98,7 +98,7 @@ DATABASE_URL="postgresql://abdoul:azerty@localhost:5432/isseg?schema=public" ADM
 
 **Seeded roles & test accounts**: the seed also creates the 4 application roles already
 referenced by `@Roles()` guards in the code — `SCOLARITE`, `ENSEIGNANT`,
-`CHEF_DEPARTEMENT`, `RESPONSABLE_PEDAGOGIQUE` — with minimal permissions
+`CHEF_DEPARTEMENT`, `DGA_ETUDES` — with minimal permissions
 (`MANAGE_DOSSIER_INSCRIPTION`, `READ_PEDAGOGIE`, `MANAGE_PEDAGOGIE`), plus one test
 account per role: `{role}@isseg.local` (e.g. `scolarite@isseg.local`), shared temporary
 password `ChangeMe123!` — rotate before any real-world use, never rely on it outside
@@ -150,7 +150,7 @@ The platform implements fine-grained RBAC with these primary roles:
 ### Academic Roles
 - **ENSEIGNANT**: Course design, grade entry for assigned courses, LMS sync
 - **CHEF_DEPARTEMENT**: Note validation (first stage), section management, program oversight for their department
-- **RESPONSABLE_PEDAGOGIQUE**: Course validation and publishing, note validation (Commission Pédagogique stage)
+- **DGA_ETUDES**: Course validation and publishing, note validation (Commission Pédagogique stage)
 - **DIRECTEUR_GENERAL**: Final note validation (Grand Conseil stage)
 
 ### Innovation & Support Roles
@@ -191,7 +191,7 @@ All grades submitted by teachers must pass through this validation chain before 
    - Department head reviews and validates grades
    - Ensures alignment with department standards
 
-4. **Commission Pédagogique** (Pedagogical Commission - Responsable Pédagogique)
+4. **Commission Pédagogique** (Pedagogical Commission - DGA Études)
    - Pedagogical oversight and validation
    - Quality assurance across all departments
 

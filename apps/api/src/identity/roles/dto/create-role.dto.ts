@@ -9,7 +9,7 @@ export class CreateRoleDto {
   @IsString()
   @IsNotEmpty()
   @Matches(/^[A-Z][A-Z0-9_]*$/, {
-    message: 'Le nom du rôle doit être en MAJUSCULES (ex: ADMIN, SCOLARITE, RESPONSABLE_PEDAGOGIQUE)',
+    message: 'Le nom du rôle doit être en MAJUSCULES (ex: ADMIN, SCOLARITE, DGA_ETUDES)',
   })
   nomRole: string;
 

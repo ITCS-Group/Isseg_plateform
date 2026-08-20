@@ -598,7 +598,7 @@ describe('NoteEtudiantService — update', () => {
     expect(tx.noteEtudiant.update).toHaveBeenCalled();
   });
 
-  it('5 — RESPONSABLE_PEDAGOGIQUE contourne la vérification de propriété', async () => {
+  it('5 — DGA_ETUDES contourne la vérification de propriété', async () => {
     prisma.noteEtudiant.findUnique.mockResolvedValue(
       makeNoteWithChain({ noteBrute: 12, enseignantUserId: 'user-other-teacher' }),
     );
@@ -608,7 +608,7 @@ describe('NoteEtudiantService — update', () => {
     const result = await service.update(
       'note-1',
       { noteBrute: 18 },
-      { id: 'resp-1', roles: ['RESPONSABLE_PEDAGOGIQUE'] },
+      { id: 'resp-1', roles: ['DGA_ETUDES'] },
     );
 
     expect(result.noteBrute).toBe(18);

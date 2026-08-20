@@ -39,7 +39,7 @@ test (`ChangeMe123!`, temporaire — cf. `apps/api/prisma/seed.ts`).
 | `SCOLARITE` | Scolarité (inscription) | Backend livré, aucun écran frontend |
 | `ENSEIGNANT` | Pédagogie (cours/notes) | ✅ Livré (backend + frontend `/teacher`) |
 | `CHEF_DEPARTEMENT` | Pédagogie (lecture seule) | Backend livré (lecture), aucun écran dédié |
-| `RESPONSABLE_PEDAGOGIQUE` | Pédagogie (lecture + écriture) | Backend livré, aucun écran dédié |
+| `DGA_ETUDES` | Pédagogie (lecture + écriture) | Backend livré, aucun écran dédié |
 | `BIBLIOTHECAIRE` | Bibliothèque (catalogue, emprunts, abonnés) | ✅ Backend livré (`feature/bibliotheque`, 19-20/08) : `SectionBibliotheque`/`Ouvrage`/`Emprunt`/`Abonne`/`DocumentAcademique`/`Reservation`, endpoints `/ouvrages`, `/emprunts`(+`/retour`), `/abonnes`, `/bibliotheque/stats/dashboard`. Aucun écran frontend. |
 | `RESPONSABLE_BIBLIOTHEQUE` | Bibliothèque (supervision — mêmes routes que BIBLIOTHECAIRE) | ✅ Backend livré (même chantier) — rôle distinct, pas fusionné dans `BIBLIOTHECAIRE`/`ADMIN` (décision explicite). Compte de test : `responsable_bibliotheque@isseg.local`. Aucun écran frontend. |
 | `RESPONSABLE_NUMERISATION` | Bibliothèque (documents académiques — thèses/mémoires) | ✅ Backend livré (même chantier) : `/documents-academiques` (CRUD, visibilité conditionnée à `diffusionAutorisee`/embargo). Aucun écran frontend. |

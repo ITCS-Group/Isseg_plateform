@@ -38,7 +38,7 @@ export class NoteEtudiantController {
   // ── GET /api/v1/notes-etudiant ───────────────────────────────────────────
 
   @Get()
-  @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
+  @Roles('ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
   @ApiOperation({
     summary: 'Lister les notes, filtrables par épreuve et/ou inscription',
     description:
@@ -56,7 +56,7 @@ export class NoteEtudiantController {
   // ── POST /api/v1/notes-etudiant ──────────────────────────────────────────
 
   @Post()
-  @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'ENSEIGNANT')
+  @Roles('ADMIN', 'DGA_ETUDES', 'ENSEIGNANT')
   @ApiOperation({ summary: 'Créer une note étudiant pour une épreuve' })
   @ApiBody({ type: CreateNoteEtudiantDto })
   @ApiResponse({ status: 201, type: NoteEtudiantResponseDto })
@@ -73,7 +73,7 @@ export class NoteEtudiantController {
   // ── GET /api/v1/notes-etudiant/:id ───────────────────────────────────────
 
   @Get(':id')
-  @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
+  @Roles('ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
   @ApiOperation({ summary: 'Récupérer une note par UUID' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, type: NoteEtudiantResponseDto })
@@ -85,7 +85,7 @@ export class NoteEtudiantController {
   // ── PATCH /api/v1/notes-etudiant/:id ─────────────────────────────────────
 
   @Patch(':id')
-  @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'ENSEIGNANT')
+  @Roles('ADMIN', 'DGA_ETUDES', 'ENSEIGNANT')
   @ApiOperation({ summary: 'Modifier la note brute d’une NoteEtudiant' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiBody({ type: UpdateNoteEtudiantDto })

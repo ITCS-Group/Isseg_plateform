@@ -269,7 +269,7 @@ Conditions préalables :
 2. Vérification par le service scolarité
 3. Signature électronique séquentielle:
    a. Chef de département (1ère signature)
-   b. Responsable pédagogique (2ème signature)
+   b. DGA Études (2ème signature)
    c. Directeur général (signature finale)
 4. Horodatage et sceau officiel
 5. Publication et mise à disposition
@@ -304,7 +304,7 @@ Response:
   },
   signatures: [
     { role: "Chef de Département", date: "2024-07-16T10:30:00Z" },
-    { role: "Responsable Pédagogique", date: "2024-07-16T14:15:00Z" },
+    { role: "DGA Études", date: "2024-07-16T14:15:00Z" },
     { role: "Directeur Général", date: "2024-07-17T09:00:00Z" }
   ]
 }
