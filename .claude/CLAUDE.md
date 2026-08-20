@@ -127,6 +127,17 @@ docker-compose up -d
 docker-compose logs -f api
 ```
 
+## Git Workflow
+
+- **Always create a dedicated branch before starting any piece of work**, no
+  matter how small it looks — git hygiene, documentation-only changes,
+  config tweaks included. There is no "too minor to branch" exception.
+- **Never commit directly to `main`**, regardless of change size. The
+  `.gitignore` cleanup committed straight to `main` on 2026-08-19 was a
+  one-off exception explicitly requested at the time — it is **not** a
+  standing pattern to repeat. Every change, however trivial, goes through a
+  branch (and a PR when one is opened).
+
 ## RBAC (Role-Based Access Control)
 
 The platform implements fine-grained RBAC with these primary roles:
@@ -273,8 +284,19 @@ When the API is running in development mode, Swagger UI is available at:
   - Audit log of issuance
 
 ### Library Loans
-- Maximum 3 active loans per student
-- Loan duration: 14 days (renewable once if no holds)
+
+Loan limits vary by borrower category — there is no single flat rule. Source:
+`agent-bibliotheque.md` §3.1 (stakeholder interview), confirmed as the
+authoritative version during the Bibliothèque planning audit (2026-08-19) —
+this table supersedes any earlier simplified "3 loans / 14 days" wording.
+
+| Borrower category | Loan duration | Max simultaneous loans | Renewal |
+|---|---|---|---|
+| Student L1-L2 | 14 days | 3 items | 1x (if no reservation pending) |
+| Student L3-M2 | 21 days | 5 items | 1x |
+| Enseignant (teacher) | 30 days | 10 items | 2x |
+| Personnel Admin | 14 days | 3 items | 1x |
+
 - Late returns trigger automatic notifications and account holds
 
 ## Important Notes
