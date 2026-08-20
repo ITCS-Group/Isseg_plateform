@@ -18,13 +18,16 @@ const OUVRAGE = {
   statut: StatutOuvrage.DISPONIBLE,
 };
 
+// Type par défaut = ENSEIGNANT : c'est le seul type autorisé à emprunter à
+// domicile par défaut (config BIBLIOTHEQUE_EMPRUNT_DOMICILE_TYPES_AUTORISES),
+// donc le fixture "happy path" doit représenter ce cas, pas un étudiant.
 const ABONNE = {
   id: 'ab-1',
   utilisateurId: 'user-1',
-  typeAbonne: TypeAbonne.ETUDIANT_L1_L2,
+  typeAbonne: TypeAbonne.ENSEIGNANT,
   statutActif: true,
-  limiteEmprunts: 3,
-  dureePretJours: 14,
+  limiteEmprunts: 10,
+  dureePretJours: 30,
 };
 
 const EMPRUNT_ROW = {
@@ -45,10 +48,16 @@ const EMPRUNT_ROW = {
   emprunteur: { nom: 'Etu', prenom: 'Diant' },
 };
 
+/** Config par défaut : seul ENSEIGNANT est autorisé à emprunter à domicile. */
+function makeConfigService(typesAutorises: string[] = ['ENSEIGNANT']) {
+  return { get: jest.fn().mockReturnValue(typesAutorises) };
+}
+
 describe('EmpruntService', () => {
   let service: EmpruntService;
   let prisma: PrismaMock;
   let regularityService: { checkRegularity: jest.Mock };
+  let config: { get: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -69,7 +78,8 @@ describe('EmpruntService', () => {
       $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prisma)),
     };
     regularityService = { checkRegularity: jest.fn() };
-    service = new EmpruntService(prisma as never, regularityService as never);
+    config = makeConfigService();
+    service = new EmpruntService(prisma as never, regularityService as never, config as never);
   });
 
   describe('create', () => {
@@ -101,7 +111,9 @@ describe('EmpruntService', () => {
       );
     });
 
-    it('étudiant non régulier → ForbiddenException, aucune écriture', async () => {
+    it('étudiant non régulier (config étendue pour isoler le check régularité) → ForbiddenException, aucune écriture', async () => {
+      config.get.mockReturnValue(['ENSEIGNANT', 'ETUDIANT_L1_L2']);
+      prisma.abonne.findUnique.mockResolvedValue({ ...ABONNE, typeAbonne: TypeAbonne.ETUDIANT_L1_L2 });
       prisma.etudiant.findUnique.mockResolvedValue({ matriculeUnique: 'ISSEG-2026-0001' });
       regularityService.checkRegularity.mockResolvedValue({
         isRegular: false,
@@ -122,7 +134,9 @@ describe('EmpruntService', () => {
       expect(result.id).toBe('emp-1');
     });
 
-    it('étudiant régulier → régularité vérifiée, emprunt créé', async () => {
+    it('étudiant régulier (config étendue) → régularité vérifiée, emprunt créé', async () => {
+      config.get.mockReturnValue(['ENSEIGNANT', 'ETUDIANT_L1_L2']);
+      prisma.abonne.findUnique.mockResolvedValue({ ...ABONNE, typeAbonne: TypeAbonne.ETUDIANT_L1_L2 });
       prisma.etudiant.findUnique.mockResolvedValue({ matriculeUnique: 'ISSEG-2026-0001' });
       regularityService.checkRegularity.mockResolvedValue({ isRegular: true });
 
@@ -132,8 +146,41 @@ describe('EmpruntService', () => {
       expect(result.id).toBe('emp-1');
     });
 
+    // ── Restriction prêt à domicile (décision métier 05/08/2026) ──────────────
+    it('type d’abonné non autorisé par défaut (ETUDIANT_L1_L2) → ForbiddenException, régularité jamais vérifiée', async () => {
+      prisma.abonne.findUnique.mockResolvedValue({ ...ABONNE, typeAbonne: TypeAbonne.ETUDIANT_L1_L2 });
+
+      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(regularityService.checkRegularity).not.toHaveBeenCalled();
+      expect(prisma.emprunt.create).not.toHaveBeenCalled();
+    });
+
+    it('ENSEIGNANT autorisé par défaut → emprunt créé', async () => {
+      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' });
+      expect(result.id).toBe('emp-1');
+    });
+
+    it('config étendue à ETUDIANT_L1_L2 → un étudiant peut désormais emprunter (sans nouveau code)', async () => {
+      config.get.mockReturnValue(['ENSEIGNANT', 'ETUDIANT_L1_L2']);
+      prisma.abonne.findUnique.mockResolvedValue({ ...ABONNE, typeAbonne: TypeAbonne.ETUDIANT_L1_L2 });
+
+      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' });
+      expect(result.id).toBe('emp-1');
+    });
+
+    it('type d’abonné non listé dans la config (PERSONNEL_ADMIN) → ForbiddenException', async () => {
+      config.get.mockReturnValue(['ENSEIGNANT']);
+      prisma.abonne.findUnique.mockResolvedValue({ ...ABONNE, typeAbonne: TypeAbonne.PERSONNEL_ADMIN });
+
+      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+    });
+
     it('quota atteint (empruntsEnCours >= limiteEmprunts) → ConflictException', async () => {
-      prisma.emprunt.count.mockResolvedValue(3);
+      prisma.emprunt.count.mockResolvedValue(10); // ABONNE par défaut = ENSEIGNANT, limiteEmprunts 10
       await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' })).rejects.toBeInstanceOf(
         ConflictException,
       );
@@ -164,7 +211,7 @@ describe('EmpruntService', () => {
       const diffJours =
         (createCall.data.dateRetourPrevue.getTime() - createCall.data.dateEmprunt.getTime()) /
         (24 * 60 * 60 * 1000);
-      expect(diffJours).toBeCloseTo(14, 5);
+      expect(diffJours).toBeCloseTo(30, 5); // ABONNE par défaut = ENSEIGNANT (30j)
       void result;
     });
   });

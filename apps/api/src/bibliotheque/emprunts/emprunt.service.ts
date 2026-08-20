@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, StatutEmprunt, StatutOuvrage } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import { PrismaService } from '../../database/prisma/prisma.service';
@@ -42,6 +43,7 @@ export class EmpruntService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly regularityService: RegularityService,
+    private readonly config: ConfigService,
   ) {}
 
   // ── Lecture ───────────────────────────────────────────────────────────────
@@ -82,6 +84,19 @@ export class EmpruntService {
     }
     if (!abonne.statutActif) {
       throw new ForbiddenException('Abonnement inactif.');
+    }
+
+    // Prêt à domicile réservé aux types d'abonné listés en configuration
+    // (décision métier du 05/08/2026 : ENSEIGNANT uniquement au lancement,
+    // étudiants limités à la consultation sur place — cf.
+    // apps/api/src/config/configuration.ts). Paramètre, pas une règle figée
+    // en dur : réactiver l'accès étudiant ne nécessite qu'un changement de
+    // variable d'environnement, aucun redéploiement de code.
+    const typesAutorises = this.config.get<string[]>('bibliotheque.empruntDomicileTypesAutorises', []);
+    if (!typesAutorises.includes(abonne.typeAbonne)) {
+      throw new ForbiddenException(
+        `Le prêt à domicile est actuellement réservé aux types d'abonné suivants : ${typesAutorises.join(', ')}.`,
+      );
     }
 
     // Régularité — ne s'applique qu'aux étudiants (règle CLAUDE.md § Student
