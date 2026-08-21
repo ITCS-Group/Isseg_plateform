@@ -6,6 +6,7 @@ import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { IssegLogo } from "@isseg/ui";
 import { login } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
+import { resolveDashboardRoute } from "@/lib/routes";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,8 +28,9 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const user = await login(email, motDePasse);
-      if (user.roles.includes("ADMIN") || user.roles.includes("ENSEIGNANT")) {
-        router.push("/teacher");
+      const dashboardRoute = resolveDashboardRoute(user.roles);
+      if (dashboardRoute) {
+        router.push(dashboardRoute);
       } else {
         setError(
           `Connexion réussie, mais aucun tableau de bord n'est encore disponible pour le rôle ${user.roles.join(", ") || "(aucun)"}.`,
