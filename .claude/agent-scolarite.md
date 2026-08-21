@@ -149,7 +149,7 @@ Avant toute délivrance, le système vérifie :
 API exposée pour cette vérification :
 
 ```typescript
-GET /api/v1/students/:matricule/regularity-status
+GET /api/v1/etudiants/:matricule/statut-regularite
 
 Response:
 {
@@ -317,7 +317,7 @@ Response:
 **Point d'intégration critique** : Le module Bibliothèque doit interroger cette API avant tout prêt.
 
 ```typescript
-GET /api/v1/students/:matricule/regularity-status
+GET /api/v1/etudiants/:matricule/statut-regularite
 
 Headers:
   Authorization: Bearer <token>
