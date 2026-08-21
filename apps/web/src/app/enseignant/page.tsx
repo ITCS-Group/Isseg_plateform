@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { BookOpen, ClipboardList, Calendar, MessageSquare, Pencil, Check, X } from "lucide-react";
 import { AppSidebar, AppHeader, type AppSidebarItem } from "@isseg/ui";
-import { useAuthStore, ensureSession, logout } from "@/lib/auth";
 import { apiFetch, ApiError } from "@/lib/api";
-import { isRoleAllowedForRoute } from "@/lib/routes";
+import { useProtectedRoute } from "@/lib/useProtectedRoute";
 
 interface CoursClasse {
   id: string;
@@ -32,8 +30,7 @@ interface NoteEtudiant {
 type Tab = "cours" | "notes" | "emploi" | "messages";
 
 export default function TeacherDashboardPage() {
-  const router = useRouter();
-  const { user, accessToken, status } = useAuthStore();
+  const { user, accessToken, status, logout } = useProtectedRoute("/enseignant");
   const [tab, setTab] = useState<Tab>("cours");
 
   const [cours, setCours] = useState<CoursClasse[] | null>(null);
@@ -44,20 +41,6 @@ export default function TeacherDashboardPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
-
-  // ── Session : restaure via le refresh cookie si on arrive directement sur
-  // cette page (rechargement), redirige vers /login si pas de session valide.
-  useEffect(() => {
-    if (status === "idle") {
-      ensureSession().then((restoredUser) => {
-        if (!restoredUser || !isRoleAllowedForRoute(restoredUser.roles, "/enseignant")) {
-          router.push("/login");
-        }
-      });
-    } else if (status === "ready" && !user) {
-      router.push("/login");
-    }
-  }, [status, user, router]);
 
   const fetchCours = useCallback(async () => {
     if (!accessToken) return;
@@ -127,10 +110,7 @@ export default function TeacherDashboardPage() {
         onSelect={(key) => setTab(key as Tab)}
         userName={`${user.prenom} ${user.nom}`}
         userRole={user.roles.join(", ")}
-        onLogout={async () => {
-          await logout();
-          router.push("/login");
-        }}
+        onLogout={logout}
       />
 
       <div className="flex flex-1 flex-col">
