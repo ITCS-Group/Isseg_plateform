@@ -30,11 +30,11 @@ import { UsersService } from './users.service';
 @ApiTags('Utilisateurs')
 @ApiBearerAuth('JWT')
 @Roles('ADMIN')
-@Controller({ path: 'users', version: '1' })
+@Controller({ path: 'utilisateurs', version: '1' })
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  // ── GET /api/v1/users ────────────────────────────────────────────────────
+  // ── GET /api/v1/utilisateurs ────────────────────────────────────────────────────
 
   @Get()
   @Roles('ADMIN', 'SCOLARITE')
@@ -44,7 +44,7 @@ export class UsersController {
     return this.usersService.findAll(query);
   }
 
-  // ── POST /api/v1/users ───────────────────────────────────────────────────
+  // ── POST /api/v1/utilisateurs ───────────────────────────────────────────────────
 
   @Post()
   @ApiOperation({ summary: 'Créer un nouvel utilisateur' })
@@ -55,7 +55,7 @@ export class UsersController {
     return this.usersService.create(dto);
   }
 
-  // ── GET /api/v1/users/:id ────────────────────────────────────────────────
+  // ── GET /api/v1/utilisateurs/:id ────────────────────────────────────────────────
 
   @Get(':id')
   @Roles('ADMIN', 'SCOLARITE')
@@ -67,7 +67,7 @@ export class UsersController {
     return this.usersService.findOne(id);
   }
 
-  // ── PATCH /api/v1/users/:id ──────────────────────────────────────────────
+  // ── PATCH /api/v1/utilisateurs/:id ──────────────────────────────────────────────
 
   @Patch(':id')
   @ApiOperation({ summary: 'Modifier nom, prénom, email ou statut actif' })
@@ -82,7 +82,7 @@ export class UsersController {
     return this.usersService.update(id, dto);
   }
 
-  // ── DELETE /api/v1/users/:id ─────────────────────────────────────────────
+  // ── DELETE /api/v1/utilisateurs/:id ─────────────────────────────────────────────
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -96,7 +96,7 @@ export class UsersController {
     return this.usersService.remove(id);
   }
 
-  // ── PATCH /api/v1/users/:id/password ────────────────────────────────────
+  // ── PATCH /api/v1/utilisateurs/:id/password ────────────────────────────────────
 
   @Patch(':id/password')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -114,7 +114,7 @@ export class UsersController {
     return this.usersService.changePassword(id, dto);
   }
 
-  // ── POST /api/v1/users/:id/roles/:roleId ─────────────────────────────────
+  // ── POST /api/v1/utilisateurs/:id/roles/:roleId ─────────────────────────────────
 
   @Post(':id/roles/:roleId')
   @ApiOperation({ summary: 'Attribuer un rôle à un utilisateur' })
@@ -129,7 +129,7 @@ export class UsersController {
     return this.usersService.assignRole(id, roleId);
   }
 
-  // ── DELETE /api/v1/users/:id/roles/:roleId ───────────────────────────────
+  // ── DELETE /api/v1/utilisateurs/:id/roles/:roleId ───────────────────────────────
 
   @Delete(':id/roles/:roleId')
   @ApiOperation({ summary: 'Retirer un rôle d\'un utilisateur' })

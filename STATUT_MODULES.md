@@ -37,7 +37,7 @@ test (`ChangeMe123!`, temporaire — cf. `apps/api/prisma/seed.ts`).
 |---|---|---|
 | `ADMIN` | Identity (users/roles/permissions) | ✅ Livré |
 | `SCOLARITE` | Scolarité (inscription) | Backend livré, aucun écran frontend |
-| `ENSEIGNANT` | Pédagogie (cours/notes) | ✅ Livré (backend + frontend `/teacher`) |
+| `ENSEIGNANT` | Pédagogie (cours/notes) | ✅ Livré (backend + frontend `/enseignant`, renommé depuis `/teacher` le 21/08) |
 | `CHEF_DEPARTEMENT` | Pédagogie (lecture seule) | Backend livré (lecture), aucun écran dédié |
 | `DGA_ETUDES` | Pédagogie (lecture + écriture) | Backend livré, aucun écran dédié |
 | `BIBLIOTHECAIRE` | Bibliothèque (catalogue, emprunts, abonnés) | ✅ Backend livré (`feature/bibliotheque`, 19-20/08) : `SectionBibliotheque`/`Ouvrage`/`Emprunt`/`Abonne`/`DocumentAcademique`/`Reservation`, endpoints `/ouvrages`, `/emprunts`(+`/retour`), `/abonnes`, `/bibliotheque/stats/dashboard`. Aucun écran frontend. |

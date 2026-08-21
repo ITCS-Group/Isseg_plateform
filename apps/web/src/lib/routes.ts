@@ -1,13 +1,42 @@
 /**
  * Mapping rôle → route du tableau de bord correspondant. Source unique de
  * vérité pour la redirection après connexion et la garde d'accès aux pages
- * protégées — évite de dupliquer la liste des rôles autorisés à chaque page
- * (cf. login/page.tsx et teacher/page.tsx, qui répétaient toutes deux
- * `["ENSEIGNANT", "ADMIN"]` avant ce fichier).
+ * protégées. Couvre les 17 rôles réellement seedés (apps/api/prisma/seed.ts) —
+ * chantier d'harmonisation des routes (validé explicitement, 2026-08-21).
+ *
+ * Plusieurs rôles peuvent pointer vers le même dashboard frontend (ex.
+ * ADMIN/SUPER_ADMIN → /admin) : cela ne fusionne PAS leurs permissions
+ * backend, qui restent la seule source de vérité pour les autorisations
+ * (cf. @Roles() sur chaque controller NestJS). Ce mapping ne détermine que
+ * l'expérience de redirection post-connexion, jamais une permission.
+ *
+ * Seules /login et /enseignant ont une page réelle à ce jour. Les autres
+ * routes ci-dessous sont enregistrées pour la résolution de dashboard mais
+ * n'ont volontairement aucune page derrière (pas de dashboard métier créé
+ * dans ce chantier — cf. rapport de la phase RBAC/routes) : une redirection
+ * vers l'une d'elles aboutit au 404 natif de Next.js tant que la page
+ * correspondante n'existe pas. C'est un comportement assumé, pas un bug —
+ * ne pas masquer ces routes manquantes par un repli arbitraire vers
+ * /enseignant.
  */
 export const ROLE_DASHBOARD_ROUTES: Record<string, string> = {
-  ADMIN: "/teacher",
-  ENSEIGNANT: "/teacher",
+  SUPER_ADMIN: "/admin",
+  ADMIN: "/admin",
+  ENSEIGNANT: "/enseignant",
+  DGA_ETUDES: "/pedagogie",
+  CHEF_DEPARTEMENT: "/pedagogie",
+  SCOLARITE: "/scolarite",
+  BIBLIOTHECAIRE: "/bibliotheque",
+  RESPONSABLE_BIBLIOTHEQUE: "/bibliotheque",
+  RESPONSABLE_NUMERISATION: "/numerisation",
+  ETUDIANT: "/etudiant",
+  COMPTABLE: "/comptabilite",
+  RH: "/rh",
+  DIRECTEUR_GENERAL: "/direction",
+  DIRECTEUR_INNOVATION: "/innovation",
+  RESPONSABLE_PUBLICATIONS: "/publications",
+  RESPONSABLE_IT: "/it",
+  PARENT: "/parent",
 };
 
 /** Route du tableau de bord pour le premier rôle reconnu de l'utilisateur, ou `null` si aucun. */

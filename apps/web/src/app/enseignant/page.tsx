@@ -50,7 +50,7 @@ export default function TeacherDashboardPage() {
   useEffect(() => {
     if (status === "idle") {
       ensureSession().then((restoredUser) => {
-        if (!restoredUser || !isRoleAllowedForRoute(restoredUser.roles, "/teacher")) {
+        if (!restoredUser || !isRoleAllowedForRoute(restoredUser.roles, "/enseignant")) {
           router.push("/login");
         }
       });

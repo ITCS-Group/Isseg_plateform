@@ -14,13 +14,13 @@ import { RegularityStatusResponseDto } from './dto/regularity-status.response.dt
 @ApiTags('Régularité')
 @ApiBearerAuth('JWT')
 @Roles('ADMIN', 'SCOLARITE', 'BIBLIOTHECAIRE')
-@Controller({ path: 'students', version: '1' })
+@Controller({ path: 'etudiants', version: '1' })
 export class RegularityController {
   constructor(private readonly regularityService: RegularityService) {}
 
-  // ── GET /api/v1/students/:matricule/regularity-status ───────────────────
+  // ── GET /api/v1/etudiants/:matricule/statut-regularite ───────────────────
 
-  @Get(':matricule/regularity-status')
+  @Get(':matricule/statut-regularite')
   @ApiOperation({
     summary: "Vérifier la régularité (frais de scolarité) d'un étudiant",
   })

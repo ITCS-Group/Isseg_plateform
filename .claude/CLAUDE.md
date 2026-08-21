@@ -215,7 +215,7 @@ The platform integrates with France's national enrollment system:
 ### Scolarité ↔ Bibliothèque
 The Library module must call the Scolarité API to verify student regularity before allowing loans:
 ```
-GET /api/v1/students/:matricule/regularity-status
+GET /api/v1/etudiants/:matricule/statut-regularite
 ```
 Returns: `{ isRegular: boolean, reason?: string, lastPaymentDate?: Date }`
 
