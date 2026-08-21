@@ -26,9 +26,11 @@ dist-ssr
 
 # env
 .env
+.env.local
 .env.production
 .env.development
 .env.test
+.env*.local
 
 # prisma
 *.db

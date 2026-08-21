@@ -6,6 +6,7 @@ import { BookOpen, ClipboardList, Calendar, MessageSquare, Pencil, Check, X } fr
 import { AppSidebar, AppHeader, type AppSidebarItem } from "@isseg/ui";
 import { useAuthStore, ensureSession, logout } from "@/lib/auth";
 import { apiFetch, ApiError } from "@/lib/api";
+import { isRoleAllowedForRoute } from "@/lib/routes";
 
 interface CoursClasse {
   id: string;
@@ -49,7 +50,7 @@ export default function TeacherDashboardPage() {
   useEffect(() => {
     if (status === "idle") {
       ensureSession().then((restoredUser) => {
-        if (!restoredUser || !restoredUser.roles.some((r) => ["ENSEIGNANT", "ADMIN"].includes(r))) {
+        if (!restoredUser || !isRoleAllowedForRoute(restoredUser.roles, "/teacher")) {
           router.push("/login");
         }
       });
