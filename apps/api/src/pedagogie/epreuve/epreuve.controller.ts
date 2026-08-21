@@ -34,7 +34,7 @@ export class EpreuveController {
   // ── GET /api/v1/epreuves ─────────────────────────────────────────────────
 
   @Get()
-  @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
+  @Roles('ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
   @ApiOperation({ summary: 'Lister les épreuves, filtrables par cours/classe et/ou type' })
   @ApiResponse({ status: 200, type: [EpreuveResponseDto] })
   findAll(@Query() query: ListEpreuveQueryDto): Promise<EpreuveResponseDto[]> {
@@ -44,7 +44,7 @@ export class EpreuveController {
   // ── POST /api/v1/epreuves ────────────────────────────────────────────────
 
   @Post()
-  @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'ENSEIGNANT')
+  @Roles('ADMIN', 'DGA_ETUDES', 'ENSEIGNANT')
   @ApiOperation({ summary: 'Créer une épreuve pour un CoursClasse' })
   @ApiBody({ type: CreateEpreuveDto })
   @ApiResponse({ status: 201, type: EpreuveResponseDto })
@@ -57,7 +57,7 @@ export class EpreuveController {
   // ── GET /api/v1/epreuves/:id ─────────────────────────────────────────────
 
   @Get(':id')
-  @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
+  @Roles('ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
   @ApiOperation({ summary: 'Récupérer une épreuve par UUID' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, type: EpreuveResponseDto })

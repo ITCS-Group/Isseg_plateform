@@ -7,7 +7,7 @@ import { ListCoursClasseQueryDto } from './dto/list-cours-classe-query.dto';
 import { CoursClasseResponseDto } from './dto/cours-classe.response.dto';
 
 /** Rôles qui voient toutes les associations, sans restriction à leurs propres cours. */
-const UNSCOPED_ROLES = ['ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT'];
+const UNSCOPED_ROLES = ['ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT'];
 
 const COURS_CLASSE_SELECT = {
   id: true,
@@ -54,7 +54,7 @@ export class CoursClasseService {
   /**
    * Détermine si la liste doit être restreinte de force aux cours d'un seul
    * enseignant (l'appelant lui-même) : le cas ENSEIGNANT sans rôle
-   * dispensé (ADMIN/RESPONSABLE_PEDAGOGIQUE/CHEF_DEPARTEMENT). Empêche un
+   * dispensé (ADMIN/DGA_ETUDES/CHEF_DEPARTEMENT). Empêche un
    * enseignant de consulter les cours d'un collègue via `?enseignantId=`.
    */
   private async resolveForcedEnseignantId(

@@ -15,19 +15,19 @@ describe('EpreuveController — RBAC (métadonnées @Roles)', () => {
     expect(roles).toEqual(['ADMIN']);
   });
 
-  it('findAll : ADMIN, RESPONSABLE_PEDAGOGIQUE, CHEF_DEPARTEMENT, ENSEIGNANT', () => {
+  it('findAll : ADMIN, DGA_ETUDES, CHEF_DEPARTEMENT, ENSEIGNANT', () => {
     const roles = reflector.get<string[]>(ROLES_KEY, EpreuveController.prototype.findAll);
-    expect(roles).toEqual(['ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT']);
+    expect(roles).toEqual(['ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT', 'ENSEIGNANT']);
   });
 
-  it('create : ADMIN, RESPONSABLE_PEDAGOGIQUE, ENSEIGNANT', () => {
+  it('create : ADMIN, DGA_ETUDES, ENSEIGNANT', () => {
     const roles = reflector.get<string[]>(ROLES_KEY, EpreuveController.prototype.create);
-    expect(roles).toEqual(['ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'ENSEIGNANT']);
+    expect(roles).toEqual(['ADMIN', 'DGA_ETUDES', 'ENSEIGNANT']);
   });
 
-  it('findOne : ADMIN, RESPONSABLE_PEDAGOGIQUE, CHEF_DEPARTEMENT, ENSEIGNANT', () => {
+  it('findOne : ADMIN, DGA_ETUDES, CHEF_DEPARTEMENT, ENSEIGNANT', () => {
     const roles = reflector.get<string[]>(ROLES_KEY, EpreuveController.prototype.findOne);
-    expect(roles).toEqual(['ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT']);
+    expect(roles).toEqual(['ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT', 'ENSEIGNANT']);
   });
 
   it('remove : aucune métadonnée locale → hérite ADMIN de la classe', () => {

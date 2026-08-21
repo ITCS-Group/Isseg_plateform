@@ -16,7 +16,7 @@ const TEST_ROLES = [
   { nomRole: 'SCOLARITE', nom: 'Scolarité', prenom: 'Test' },
   { nomRole: 'ENSEIGNANT', nom: 'Enseignant', prenom: 'Test' },
   { nomRole: 'CHEF_DEPARTEMENT', nom: 'Chef Département', prenom: 'Test' },
-  { nomRole: 'RESPONSABLE_PEDAGOGIQUE', nom: 'Responsable Pédagogique', prenom: 'Test' },
+  { nomRole: 'DGA_ETUDES', nom: 'DGA Études', prenom: 'Test' },
   // Bibliothèque (chantier feature/bibliotheque) : ces 4 rôles ont désormais
   // de vraies routes @Roles() derrière eux (ouvrages/emprunts/réservations/
   // documents-académiques/abonnés) — déplacés depuis AUTH_ONLY_ROLES pour
@@ -33,7 +33,7 @@ const TEST_ROLES = [
 // Permissions minimales, alignées sur les @Roles() déjà en place :
 // - SCOLARITE gère seule le cycle de vie d'un dossier d'inscription
 //   (submit/start-processing/register/reject sur registration.controller.ts).
-// - ENSEIGNANT et RESPONSABLE_PEDAGOGIQUE peuvent créer/modifier
+// - ENSEIGNANT et DGA_ETUDES peuvent créer/modifier
 //   (cours-classe, épreuve, note-etudiant) ; CHEF_DEPARTEMENT n'a
 //   aujourd'hui que la lecture sur ces 3 ressources dans le code.
 // Note : aucun controller n'utilise encore @Permissions() (RBAC actuel =
@@ -75,12 +75,12 @@ const TEST_PERMISSIONS: Array<{
   {
     nomPermission: 'READ_PEDAGOGIE',
     description: 'Consulter les cours-classes, épreuves et notes des étudiants',
-    roles: ['ENSEIGNANT', 'CHEF_DEPARTEMENT', 'RESPONSABLE_PEDAGOGIQUE'],
+    roles: ['ENSEIGNANT', 'CHEF_DEPARTEMENT', 'DGA_ETUDES'],
   },
   {
     nomPermission: 'MANAGE_PEDAGOGIE',
     description: 'Créer/modifier les cours-classes, épreuves et notes des étudiants',
-    roles: ['ENSEIGNANT', 'RESPONSABLE_PEDAGOGIQUE'],
+    roles: ['ENSEIGNANT', 'DGA_ETUDES'],
   },
   {
     nomPermission: 'MANAGE_BIBLIOTHEQUE',

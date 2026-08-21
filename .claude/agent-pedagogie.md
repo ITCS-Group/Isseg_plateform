@@ -89,7 +89,7 @@ POST /api/v1/pedagogie/notes/saisir
 
 #### Stage 4: Commission Pédagogique
 
-**Rôle**: RESPONSABLE_PEDAGOGIQUE
+**Rôle**: DGA_ETUDES
 **Actions**:
 - Supervision pédagogique inter-départements
 - Harmonisation des pratiques de notation
@@ -276,7 +276,7 @@ const NOTES_PERMISSIONS = {
     'notes.request-correction',
   ],
 
-  RESPONSABLE_PEDAGOGIQUE: [
+  DGA_ETUDES: [
     'notes.validate-commission',
     'notes.read-all',
     'notes.veto',

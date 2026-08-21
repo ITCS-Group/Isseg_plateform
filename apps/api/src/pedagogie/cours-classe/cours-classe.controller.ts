@@ -36,7 +36,7 @@ export class CoursClasseController {
   // ── GET /api/v1/cours-classes ────────────────────────────────────────────
 
   @Get()
-  @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
+  @Roles('ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
   @ApiOperation({
     summary: 'Lister les associations CoursClasse, filtrables par cours et/ou classe',
     description:
@@ -54,7 +54,7 @@ export class CoursClasseController {
   // ── POST /api/v1/cours-classes ───────────────────────────────────────────
 
   @Post()
-  @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE')
+  @Roles('ADMIN', 'DGA_ETUDES')
   @ApiOperation({ summary: 'Créer une association CoursClasse' })
   @ApiBody({ type: CreateCoursClasseDto })
   @ApiResponse({ status: 201, type: CoursClasseResponseDto })
@@ -67,7 +67,7 @@ export class CoursClasseController {
   // ── GET /api/v1/cours-classes/:id ────────────────────────────────────────
 
   @Get(':id')
-  @Roles('ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
+  @Roles('ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
   @ApiOperation({ summary: 'Récupérer une association CoursClasse par UUID' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, type: CoursClasseResponseDto })

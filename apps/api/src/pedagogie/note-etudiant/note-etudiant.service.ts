@@ -14,10 +14,10 @@ import { UpdateNoteEtudiantDto } from './dto/update-note-etudiant.dto';
 import { NoteEtudiantResponseDto } from './dto/note-etudiant.response.dto';
 
 /** Rôles dispensés de la vérification de propriété enseignant (§7 spécification). */
-const OWNERSHIP_EXEMPT_ROLES = ['ADMIN', 'RESPONSABLE_PEDAGOGIQUE'];
+const OWNERSHIP_EXEMPT_ROLES = ['ADMIN', 'DGA_ETUDES'];
 
 /** Rôles qui voient toutes les notes, sans restriction à leurs propres cours. */
-const UNSCOPED_ROLES = ['ADMIN', 'RESPONSABLE_PEDAGOGIQUE', 'CHEF_DEPARTEMENT'];
+const UNSCOPED_ROLES = ['ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT'];
 
 const NOTE_ETUDIANT_SELECT = {
   id: true,
