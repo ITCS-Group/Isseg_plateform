@@ -92,6 +92,8 @@ model Utilisateur {
   dossiersValides         DossierInscription[]  @relation("DossierValidateur")
   registrationHistory     RegistrationHistory[] @relation("HistoryAuthor")
   noteEtudiantHistoriques NoteEtudiantHistory[] @relation("NoteHistoryAuthor")
+  abandonsSignales        Abandon[]             @relation("AbandonSignalePar")
+  abandonsDecides         Abandon[]             @relation("AbandonDecidePar")
 
   emprunts Emprunt[]
   abonne   Abonne?
@@ -231,6 +233,7 @@ model AnneeUniversitaire {
   inscriptions        Inscription[]
   fraisScolarite      FraisScolarite[]
   dossiersInscription DossierInscription[]
+  abandons            Abandon[]
 }
 
 model Filiere {
@@ -262,6 +265,7 @@ model Etudiant {
   dossiers     DossierInscription[]
   inscriptions Inscription[]
   carnetSuivi  CarnetSuivi?
+  abandons     Abandon[]
 
   parents Parent[] @relation("ParentEtudiant")
 
@@ -308,6 +312,39 @@ model RegistrationHistory {
 
   @@index([dossierId, changedAt])
   @@index([changedBy])
+}
+
+model Abandon {
+  id         String        @id @default(uuid())
+  etudiantId String
+  anneeId    String
+  statut     StatutAbandon @default(CONSTATE)
+
+  // Constat — toujours renseigné à la création.
+  dateConstat  DateTime @default(now())
+  signaleParId String
+
+  // Reprise — renseigné seulement une fois la demande initiée.
+  dateDemandeReprise  DateTime?
+  dateDecisionReprise DateTime?
+  decideParId         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  etudiant           Etudiant           @relation(fields: [etudiantId], references: [id])
+  anneeUniversitaire AnneeUniversitaire @relation(fields: [anneeId], references: [id])
+  signalePar         Utilisateur        @relation("AbandonSignalePar", fields: [signaleParId], references: [id])
+  decidePar          Utilisateur?       @relation("AbandonDecidePar", fields: [decideParId], references: [id])
+
+  @@unique([etudiantId, anneeId])
+}
+
+enum StatutAbandon {
+  CONSTATE
+  REPRISE_DEMANDEE
+  REPRISE_ACCORDEE
+  REPRISE_REFUSEE
 }
 
 model Classe {

@@ -11,6 +11,7 @@ import configuration from './config/configuration';
 import { PrismaModule } from './database/prisma/prisma.module';
 import { IdentityModule } from './identity/identity.module';
 import { PedagogieModule } from './pedagogie/pedagogie.module';
+import { AbandonModule } from './scolarite/abandon/abandon.module';
 import { RegularityModule } from './scolarite/regularity/regularity.module';
 import { RegistrationModule } from './scolarite/registration/registration.module';
 
@@ -40,6 +41,9 @@ import { RegistrationModule } from './scolarite/registration/registration.module
 
     // ── Domaine : Scolarité — statut de régularité (contrat inter-modules) ──
     RegularityModule,
+
+    // ── Domaine : Scolarité — workflow abandon / reprise ────────────────────
+    AbandonModule,
 
     // ── Domaine : Pédagogie ──────────────────────────────────────────────────
     PedagogieModule,
