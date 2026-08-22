@@ -36,7 +36,7 @@ test (`ChangeMe123!`, temporaire — cf. `apps/api/prisma/seed.ts`).
 | Rôle | Module métier | État |
 |---|---|---|
 | `ADMIN` | Identity (users/roles/permissions) | ✅ Livré |
-| `SCOLARITE` | Scolarité (inscription) | Backend livré, aucun écran frontend |
+| `SCOLARITE` | Scolarité (inscription) | Backend livré, aucun écran frontend. Actions du workflow (`/dossiers-inscription/:id/{submit,start-processing,register,reject}`) + lecture (`GET /dossiers-inscription` listing paginé, `GET /dossiers-inscription/stats` effectif INSCRIT) — les deux endpoints de lecture scopés à l'année universitaire active (`estActive=true`), chantier `feat/scolarite-inscriptions-listing`, 22/08. |
 | `ENSEIGNANT` | Pédagogie (cours/notes) | ✅ Livré (backend + frontend `/enseignant`, renommé depuis `/teacher` le 21/08) |
 | `CHEF_DEPARTEMENT` | Pédagogie (lecture seule) | Backend livré (lecture), aucun écran dédié |
 | `DGA_ETUDES` | Pédagogie (lecture + écriture) | Backend livré, aucun écran dédié |
@@ -63,6 +63,23 @@ n'existe — voir `apps/web/src/app/admin/page.tsx`.
 | StatCard "Tickets IT ouverts" + Tableau "Tickets IT récents" | Module Support IT complet | Nouveau module (modèle de données + endpoints), ex. `apps/api/src/support-it/` | Contrairement aux lignes précédentes, il ne s'agit pas d'un agrégat manquant sur une donnée existante : aucun module Support IT n'existe (rôle `RESPONSABLE_IT` seedé sans route métier, cf. section ci-dessus) |
 
 **Déjà branché réellement** : StatCard "Prêts bibliothèque" ← `GET /bibliotheque/stats/dashboard` (`empruntsEnCours`/`empruntsEnRetard`).
+
+## Points techniques à surveiller
+
+- **`emprunt.service.integration-spec.ts` — test "quota atteint (10 emprunts en
+  cours pour un ENSEIGNANT) : refus" fragile aux conditions réseau du moment**
+  (observé 22/08, chantier `feat/scolarite-inscriptions-listing`, deux
+  échecs reproductibles au même endroit lors de l'exécution complète de la
+  suite d'intégration). Root cause : le test enchaîne 10 créations
+  d'emprunt **séquentielles** pour atteindre le quota ; avec la latence Neon
+  observée ce jour-là (3 à 9 s par création), le total dépasse le timeout
+  Jest par défaut de 30 s. **Ce n'est pas un défaut du code** (le service
+  fonctionne correctement — les 9 autres tests de la même suite passent,
+  et le comportement métier n'est pas en cause), c'est un test dont le
+  budget de temps ne tient pas compte de la latence réseau variable de la
+  base de test distante. Pas un chantier à ouvrir maintenant — deux pistes
+  à trancher plus tard : augmenter le timeout de ce test spécifique, ou
+  paralléliser les 10 créations (`Promise.all`) pour réduire le temps total.
 
 ## Notes opérationnelles
 
