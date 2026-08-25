@@ -109,13 +109,24 @@ Ce conteneur ne fait que servir le code (Apache + PHP) — il ne contient
 Le site est accessible sur `http://localhost:${MOODLE_APP_PORT:-8090}` mais
 affichera une erreur tant que le schéma n'est pas installé (étape suivante).
 
-## 5. Installer le schéma + créer le compte admin (CLI, pas l'assistant web)
+## 5. Installer le schéma + créer le compte admin (CLI, mot de passe jetable)
 
 `config.php` existe déjà (le nôtre, monté en volume) et pointe vers
 `moodleDb` — il ne reste qu'à initialiser le schéma. Le script officiel
 `admin/cli/install_database.php` fait les deux en une fois (schéma **et**
-compte admin), sans passer par l'assistant web, et sans jamais taper le mot
-de passe admin en clair dans une commande :
+compte admin), sans passer par l'assistant web.
+
+**Sur le mot de passe utilisé ici** : `install_database.php` n'accepte le
+mot de passe admin QUE via l'argument `--adminpass` (vérifié dans son code
+source — pas de lecture de variable d'environnement en alternative). Or
+tout argument de ligne de commande est visible en clair, pendant
+l'exécution du process, via `ps aux` / `/proc/<pid>/cmdline` /
+`docker top isseg-moodle-app` — propriété inhérente à `execve()`, aucun
+contournement possible côté script. On utilise donc ici un mot de passe
+**jetable**, sans rapport avec `MOODLE_ADMIN_PASSWORD` du `.env` — son
+exposition transitoire est sans conséquence puisqu'il est immédiatement
+remplacé à l'étape 6. Le vrai mot de passe définitif, lui, n'est **jamais**
+passé en argument CLI.
 
 ```bash
 cd services/moodle-service/moodle-app
@@ -125,12 +136,14 @@ docker compose exec -T -u www-data moodle php admin/cli/install_database.php \
   --fullname="ISSEG Moodle" \
   --shortname="ISSEGMoodle" \
   --adminuser="$MOODLE_ADMIN_USERNAME" \
-  --adminpass="$MOODLE_ADMIN_PASSWORD" \
+  --adminpass="TempInstall-$(date +%s)!" \
   --adminemail="$MOODLE_ADMIN_EMAIL"
 ```
 
 (`-u www-data` : le script l'exige explicitement — même utilisateur que le
-process Apache.)
+process Apache. Le suffixe `$(date +%s)` évite juste de réutiliser un mot
+de passe jetable identique d'une installation à l'autre, aucune autre
+raison.)
 
 **Vérification que le schéma est vraiment initialisé** (pas juste que le
 conteneur tourne) : une vraie table Moodle doit exister dans `moodleDb`,
@@ -141,10 +154,15 @@ psql "postgresql://<user>:<password>@<host-direct>:5432/moodleDb?sslmode=require
   -c "SELECT COUNT(*) FROM mdl_config;"
 ```
 
-## 6. Confirmer l'accès à l'interface web
+## 6. Se connecter et définir le mot de passe définitif
 
-`http://localhost:${MOODLE_APP_PORT:-8090}` — connexion avec
-`MOODLE_ADMIN_USERNAME` / `MOODLE_ADMIN_PASSWORD`.
+1. `http://localhost:${MOODLE_APP_PORT:-8090}` — connexion avec
+   `MOODLE_ADMIN_USERNAME` et le mot de passe **jetable** utilisé à
+   l'étape 5 (celui qui apparaît dans la commande, pas `MOODLE_ADMIN_PASSWORD`).
+2. **Préférences → Changer le mot de passe** : définir ici
+   `MOODLE_ADMIN_PASSWORD` (la vraie valeur du `.env`) — c'est le seul
+   endroit où ce mot de passe définitif doit être saisi, jamais dans une
+   commande CLI. Le mot de passe jetable devient alors invalide.
 
 ## 7. Activer les Web Services REST + générer un token API
 
