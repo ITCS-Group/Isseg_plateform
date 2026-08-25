@@ -45,6 +45,25 @@ test (`ChangeMe123!`, temporaire — cf. `apps/api/prisma/seed.ts`).
 | `RESPONSABLE_NUMERISATION` | Bibliothèque (documents académiques — thèses/mémoires) | ✅ Backend livré (même chantier) : `/documents-academiques` (CRUD, visibilité conditionnée à `diffusionAutorisee`/embargo). Aucun écran frontend. |
 | `ETUDIANT` | Bibliothèque (lecture catalogue, réservation) | ✅ Backend livré (même chantier) pour la partie Bibliothèque uniquement : `GET /ouvrages`, `GET /emprunts` (scopé à ses propres emprunts, actuellement toujours vide), `POST /reservations`, lecture `/documents-academiques` diffusés. **Ne peut plus emprunter à domicile depuis le 20/08** (restriction ENSEIGNANT-only, réactivable par configuration sans nouveau code). Le **Portail Étudiant** plus large (profil, notes, autres documents) reste non implémenté — aucun écran frontend dans les deux cas. |
 
+## Backlog — endpoints manquants pour le Dashboard Admin (`/admin`)
+
+Identifié lors de l'audit de correspondance Figma ↔ backend du chantier
+`feat/dashboards-phase8-etape2-admin` (2026-08-21), pour ne pas refaire cette
+analyse depuis zéro au prochain chantier sur `/admin`. Le Dashboard Admin
+(StatCards + graphique + tableaux) affiche actuellement un état "Bientôt
+disponible" pour chacune des lignes ci-dessous, tant qu'aucun endpoint réel
+n'existe — voir `apps/web/src/app/admin/page.tsx`.
+
+| Widget Figma | Donnée manquante | Endpoint à créer (proposition) | Remarque |
+|---|---|---|---|
+| StatCard "Effectif total" | Agrégat du nombre d'étudiants inscrits | `GET /dossiers-inscription/stats` (ou équivalent) | Aucun `GET` de listing/comptage n'existe sur `dossiers-inscription` aujourd'hui — le controller n'expose que les actions du workflow (submit/start-processing/register/reject) |
+| StatCard "Taux de paiement" | Agrégat du taux de régularité financière sur l'ensemble des étudiants | Endpoint d'agrégation à créer, ex. `GET /scolarite/stats/paiements` | La donnée métier "régularité" existe déjà **par étudiant** (`GET /etudiants/:matricule/statut-regularite`), mais aucun rollup global n'existe — ne pas confondre avec un module Finance à créer de zéro, c'est un agrégat manquant sur une donnée qui existe déjà unitairement |
+| Graphique "Inscriptions/abandons par mois" | Agrégat mensuel des inscriptions et abandons | Endpoint d'agrégat temporel à créer, ex. `GET /dossiers-inscription/stats/mensuel` | Le concept "abandon" (dropout) n'est a priori pas modélisé dans le schéma Prisma actuel — à vérifier/statuer avant de créer l'endpoint |
+| Tableau "Inscriptions récentes" | Listing des dossiers d'inscription les plus récents | `GET /dossiers-inscription` (listing paginé) | Même cause racine que l'"Effectif total" — aucun GET de listing n'existe sur ce controller |
+| StatCard "Tickets IT ouverts" + Tableau "Tickets IT récents" | Module Support IT complet | Nouveau module (modèle de données + endpoints), ex. `apps/api/src/support-it/` | Contrairement aux lignes précédentes, il ne s'agit pas d'un agrégat manquant sur une donnée existante : aucun module Support IT n'existe (rôle `RESPONSABLE_IT` seedé sans route métier, cf. section ci-dessus) |
+
+**Déjà branché réellement** : StatCard "Prêts bibliothèque" ← `GET /bibliotheque/stats/dashboard` (`empruntsEnCours`/`empruntsEnRetard`).
+
 ## Notes opérationnelles
 
 - **Token API Moodle** généré le 25/08/2026, expire le 24/09/2026 — à

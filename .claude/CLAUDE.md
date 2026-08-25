@@ -137,6 +137,19 @@ docker-compose logs -f api
   one-off exception explicitly requested at the time — it is **not** a
   standing pattern to repeat. Every change, however trivial, goes through a
   branch (and a PR when one is opened).
+- **Never mix frontend and backend on the same branch**, even within a
+  single logical chantier. If a chantier touches both (e.g. "wire the admin
+  dashboard to real data"), split it into at least two branches: one for the
+  backend (new endpoints/models), one for the frontend (consuming those
+  endpoints) — each with its own tests, its own diff, its own validation
+  before moving to the next. The frontend must never depend on a backend
+  that hasn't been merged to `main` yet in order to be testable — backend
+  first, tested and merged, only then the frontend that consumes it.
+  More broadly: **one branch = one precise feature**, not a bundle of
+  changes grouped because "it's the same theme." If you notice you're
+  editing files across two different domains (e.g. `apps/api` *and*
+  `apps/web`, or two distinct business modules) on the same branch, stop and
+  propose a split before continuing.
 
 ## RBAC (Role-Based Access Control)
 
