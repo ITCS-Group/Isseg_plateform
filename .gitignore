@@ -43,3 +43,15 @@ next-env.d.ts
 
 # typescript incremental build info
 *.tsbuildinfo
+
+# artefacts tsc compilés à côté de leur source .ts (outDir non respecté) :
+# fichiers exacts uniquement — ces dossiers contiennent aussi de vrais .js
+# (ex. apps/api/test/load-test-env.js, apps/web/postcss.config.js)
+apps/api/prisma/seed.js
+apps/api/test/prisma-test-client.js
+apps/worker/src/index.js
+packages/shared/src/index.js
+packages/ui/src/index.js
+services/moodle-service/src/app.module.js
+services/moodle-service/src/main.js
+apps/web/tailwind.config.js
