@@ -1,0 +1,43 @@
+services:
+  moodle:
+    # Moodle 4.5 (LTS) — support sécurité jusqu'à oct. 2027. PostgreSQL >= 13
+    # requis (Moodle 4.5), UTF8 requis. Aucune extension PostgreSQL requise
+    # par Moodle lui-même.
+    image: bitnami/moodle:4.5
+    container_name: isseg-moodle-app
+    ports:
+      - "${MOODLE_APP_PORT:-8090}:8080"
+    environment:
+      MOODLE_DATABASE_TYPE: postgresql
+      MOODLE_DATABASE_HOST: ${MOODLE_DB_HOST}
+      MOODLE_DATABASE_PORT_NUMBER: ${MOODLE_DB_PORT:-5432}
+      MOODLE_DATABASE_NAME: ${MOODLE_DB_NAME}
+      MOODLE_DATABASE_USER: ${MOODLE_DB_USER}
+      MOODLE_DATABASE_PASSWORD: ${MOODLE_DB_PASSWORD}
+
+      # Neon exige sslmode=require. PGSSLMODE/PGSSLCERT sont des variables
+      # libpq standard (lues par l'extension pgsql de PHP), pas des
+      # variables bitnami/moodle. PGSSLCERT pointe volontairement vers un
+      # chemin inscriptible par l'utilisateur Apache du conteneur —
+      # contournement d'un bug connu et documenté :
+      # https://github.com/bitnami/containers/issues/65832
+      # (le chemin par défaut /root/.postgresql/postgresql.crt n'est pas
+      # lisible par le process Apache, la connexion SSL échoue sinon avec
+      # "Permission denied" même quand aucun certificat client n'est requis).
+      PGSSLMODE: require
+      PGSSLCERT: /tmp/postgresql.crt
+
+      # Bootstrap admin — première initialisation uniquement (voir SETUP.md).
+      MOODLE_USERNAME: ${MOODLE_ADMIN_USERNAME}
+      MOODLE_PASSWORD: ${MOODLE_ADMIN_PASSWORD}
+      MOODLE_EMAIL: ${MOODLE_ADMIN_EMAIL}
+      MOODLE_SITE_NAME: "ISSEG Moodle"
+      MOODLE_HOST: ${MOODLE_SITE_URL:-localhost}
+    volumes:
+      - moodle_data:/bitnami/moodle
+      - moodledata_data:/bitnami/moodledata
+    restart: unless-stopped
+
+volumes:
+  moodle_data:
+  moodledata_data:
