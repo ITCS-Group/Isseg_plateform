@@ -258,6 +258,10 @@ only**. Create service. Sur l'écran "Add functions to the service" qui
 suit : **ne rien ajouter** — "This service has no functions" est l'état
 voulu à ce stade (attend le mapping de données, entretiens Moodle).
 
+⚠️ Voir **§ 7.6** : `core_webservice_get_site_info` doit être ajoutée avant
+que `MoodleClientService` (y compris `ping()`) puisse fonctionner — "sans
+fonction" n'est donc l'état final que tant qu'aucun appel n'est fait.
+
 Puis, depuis la liste des services externes, lien **Authorised users** sur
 ce service : ajouter l'utilisateur créé en 7.2 (le déplacer vers
 "Authorised users").
@@ -272,6 +276,37 @@ contraire — **noter la date d'expiration quelque part** (voir
 
 Reporter la valeur dans `services/moodle-service/.env` (`MOODLE_API_KEY`) —
 jamais committé, jamais en dur dans un fichier suivi par git.
+
+### 7.6 Autoriser `core_webservice_get_site_info` (requis pour `ping()`)
+
+⚠️ **Sans cette étape, tout appel via `MoodleClientService` échoue** —
+y compris `ping()`, qui appelle précisément cette fonction. Le service
+"ISSEG Sync" créé en 7.4 est délibérément vide de toute fonction ; sans en
+autoriser au moins une, Moodle rejette systématiquement le token avec :
+
+```json
+{"exception":"webservice_access_exception","errorcode":"accessexception","message":"Access control exception"}
+```
+
+**Site administration → Plugins → Web services → External services →
+ISSEG Sync → Functions → Add functions.** Chercher et ajouter
+**uniquement** `core_webservice_get_site_info` — une fonction
+d'introspection pure (version/nom du site, aucune donnée métier), pas une
+fonction métier. Vérifier après coup qu'une seule fonction est listée (pas
+plus) :
+
+```sql
+SELECT sf.functionname
+FROM mdl_external_services_functions sf
+JOIN mdl_external_services s ON s.id = sf.externalserviceid
+WHERE s.shortname = 'isseg_sync';
+-- doit retourner exactement 1 ligne : core_webservice_get_site_info
+```
+
+**C'est un état applicatif Moodle (une ligne en base), pas versionné par
+git.** Si l'instance est réinstallée depuis zéro (étapes 1 à 5 refaites),
+cette étape doit être **refaite manuellement** — rien dans le code ou les
+migrations ne la recrée automatiquement.
 
 ## Ce qui n'est délibérément PAS fait ici
 
