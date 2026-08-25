@@ -1,1 +1,1 @@
-﻿{ "extends": "@isseg/config/typescript/nest.json", "include": ["src"], "compilerOptions": { "outDir": "./dist" } }
+﻿{ "extends": "../../packages/config/typescript/nest.json", "include": ["src"], "compilerOptions": { "outDir": "./dist" } }
