@@ -1,51 +1,52 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Ce fichier fournit des repères à Claude Code (claude.ai/code) pour travailler sur le code de ce dépôt.
 
-## Project Overview
+## Aperçu du projet
 
-Integrated management and administration platform for the **Institut Supérieur des Sciences de l'Éducation de Guinée (ISSEG)** in Conakry. The platform handles student enrollment, pedagogy, grades, diplomas, LMS/Moodle integration, library, finance/HR, and system administration.
+Plateforme intégrée de gestion et d'administration pour l'**Institut Supérieur des Sciences de l'Éducation de Guinée (ISSEG)** à Conakry. La plateforme couvre l'inscription des étudiants, la pédagogie, les notes, les diplômes, l'intégration LMS/Moodle, la bibliothèque, la finance/RH, et l'administration système.
 
-### Core Modules
-- **Scolarité**: Enrollment (Parcoursup integration), document management, academic leaves, diploma processing
-- **Pédagogie**: Note validation workflow (5-stage approval chain), course management, LMS integration
-- **Bibliothèque**: Catalog management, loans (with regularity verification), digitization of theses/memoirs
-- **Départements**: 4 departments (Sciences de l'Éducation, Didactique, Sciences du Langage, Sciences Sociales)
-- **Innovation Numérique**: University publications (ISBN), pedagogical innovation center, IT support
-- **Finance/RH**: Tuition fees, online payments, personnel management
+### Modules principaux
+- **Scolarité** : Inscription (intégration Parcoursup), gestion documentaire, abandons/reprises, traitement des diplômes
+- **Pédagogie** : Workflow de validation des notes (chaîne de validation à 5 étapes), gestion des cours, intégration LMS
+- **Bibliothèque** : Gestion du catalogue, emprunts (avec vérification de régularité), numérisation des thèses/mémoires
+- **Départements** : 4 départements (Sciences de l'Éducation, Didactique, Sciences du Langage, Sciences Sociales)
+- **Innovation Numérique** : Publications universitaires (ISBN), centre d'innovation pédagogique, support informatique
+- **Finance/RH** : Frais de scolarité, paiements en ligne, gestion du personnel
 
-## Monorepo Architecture (pnpm + Turborepo)
+## Architecture monorepo (pnpm + Turborepo)
 
-This is a monorepo managed with `pnpm workspaces` and `turbo` for orchestration.
+Ce dépôt est un monorepo géré avec `pnpm workspaces` et orchestré par `turbo`.
 
-### Workspace Structure
+### Structure des workspaces
 
-- **`apps/api`**: Main REST API (NestJS 10, Prisma ORM, JWT/RBAC authentication)
-  - Entry point: `src/main.ts`
-  - Authentication with refresh token rotation and secure cookie handling
-  - Swagger UI available at `/api/docs` (non-production only)
-  - Global API prefix: `/api/v1`
-  - Modules: `auth`, `identity` (users/roles/permissions), `common` (guards/filters/decorators)
+- **`apps/api`** : API REST principale (NestJS 10, ORM Prisma, authentification JWT/RBAC)
+  - Point d'entrée : `src/main.ts`
+  - Authentification avec rotation des refresh tokens et gestion sécurisée des cookies
+  - Swagger UI disponible sur `/api/docs` (hors production uniquement)
+  - Préfixe API global : `/api/v1`
+  - Modules : `auth`, `identity` (utilisateurs/rôles/permissions), `common` (guards/filtres/décorateurs)
 
-- **`apps/web`**: Frontend web application (Next.js 14, App Router, TailwindCSS)
-  - Single portal for all user roles
+- **`apps/web`** : Application web frontend (Next.js 14, App Router, TailwindCSS)
+  - Portail unique pour tous les rôles utilisateurs
 
-- **`apps/worker`**: Asynchronous job processing (BullMQ/Redis)
-  - PDF/Excel generation, SMS/Email gateway
+- **`apps/worker`** : Traitement asynchrone de tâches (BullMQ/Redis)
+  - Génération PDF/Excel, passerelle SMS/Email
 
-- **`services/moodle-service`**: Moodle LMS synchronization microservice
-  - Bidirectional integration with Moodle
+- **`services/moodle-service`** : Microservice de synchronisation avec le LMS Moodle
+  - Intégration bidirectionnelle avec Moodle
 
-- **`packages/shared`**: Shared code (Types, DTOs)
-- **`packages/ui`**: Shared React components
-- **`packages/config`**: Common configurations
+- **`packages/shared`** : Code partagé (Types, DTOs)
+- **`packages/ui`** : Composants React partagés
+- **`packages/config`** : Configurations communes
 
-## Design System & UI Guidelines
+## Système de design & guidelines UI
 
-Design tokens live in `apps/web/tailwind.config.ts` (`theme.extend.colors`) and are used directly
-as Tailwind utility classes — the color keys **are** the token names, no `isseg-` prefix:
+Les tokens de design vivent dans `apps/web/tailwind.config.ts` (`theme.extend.colors`) et sont utilisés
+directement comme classes utilitaires Tailwind — les clés de couleur **sont** les noms des tokens, pas de
+préfixe `isseg-` :
 
-| Token | Hex | Tailwind classes |
+| Token | Hex | Classes Tailwind |
 |---|---|---|
 | `navy` | `#0B2559` | `bg-navy`, `text-navy`, `border-navy` |
 | `gold` | `#F2A910` | `bg-gold`, `text-gold` |
@@ -64,267 +65,277 @@ as Tailwind utility classes — the color keys **are** the token names, no `isse
   "Portail de gestion académique". Ce fichier est désormais la **source de vérité** pour le code —
   en cas de divergence future avec Figma, ce fichier fait foi, pas l'inverse.
 
-## Development Commands
+## Commandes de développement
 
-### Running the Project
+### Lancer le projet
 
 ```bash
-# Start all services in development mode
+# Démarrer tous les services en mode développement
 pnpm dev
 
-# Start specific workspace
-pnpm --filter api dev        # Backend API only
-pnpm --filter web dev        # Frontend only
-pnpm --filter worker dev     # Worker service only
+# Démarrer un workspace spécifique
+pnpm --filter api dev        # Backend API uniquement
+pnpm --filter web dev        # Frontend uniquement
+pnpm --filter worker dev     # Worker uniquement
 ```
 
-### Database Management (Prisma)
+### Gestion de la base de données (Prisma)
 
 ```bash
-# Apply migrations
+# Appliquer les migrations
 DATABASE_URL="postgresql://abdoul:azerty@localhost:5432/isseg?schema=public" pnpm --filter api prisma migrate dev
 
-# Generate Prisma Client after schema changes
+# Régénérer le client Prisma après une modification du schéma
 DATABASE_URL="postgresql://abdoul:azerty@localhost:5432/isseg?schema=public" pnpm --filter api prisma generate
 
-# Open Prisma Studio (DB GUI)
+# Ouvrir Prisma Studio (interface graphique DB)
 DATABASE_URL="postgresql://abdoul:azerty@localhost:5432/isseg?schema=public" pnpm --filter api prisma studio
 
-# Seed database with initial admin user
+# Peupler la base avec un utilisateur admin initial
 DATABASE_URL="postgresql://abdoul:azerty@localhost:5432/isseg?schema=public" ADMIN_EMAIL="admin@isseg.local" ADMIN_PASSWORD="Admin123!Secure" pnpm --filter api seed
 ```
 
-**Important**: The database connection requires `DATABASE_URL` environment variable. The default credentials are `abdoul:azerty@localhost:5432/isseg`.
+**Important** : la connexion à la base de données nécessite la variable d'environnement `DATABASE_URL`. Les identifiants par défaut sont `abdoul:azerty@localhost:5432/isseg`.
 
-**Seeded roles & test accounts**: the seed also creates the 4 application roles already
-referenced by `@Roles()` guards in the code — `SCOLARITE`, `ENSEIGNANT`,
-`CHEF_DEPARTEMENT`, `DGA_ETUDES` — with minimal permissions
-(`MANAGE_DOSSIER_INSCRIPTION`, `READ_PEDAGOGIE`, `MANAGE_PEDAGOGIE`), plus one test
-account per role: `{role}@isseg.local` (e.g. `scolarite@isseg.local`), shared temporary
-password `ChangeMe123!` — rotate before any real-world use, never rely on it outside
-dev/test environments. Seed is idempotent (safe to re-run).
+**Rôles seedés & comptes de test** : le seed crée aussi les 4 rôles applicatifs déjà
+référencés par les guards `@Roles()` dans le code — `SCOLARITE`, `ENSEIGNANT`,
+`CHEF_DEPARTEMENT`, `DGA_ETUDES` — avec des permissions minimales
+(`MANAGE_DOSSIER_INSCRIPTION`, `READ_PEDAGOGIE`, `MANAGE_PEDAGOGIE`), plus un compte de
+test par rôle : `{role}@isseg.local` (ex. `scolarite@isseg.local`), mot de passe temporaire
+partagé `ChangeMe123!` — à faire tourner avant tout usage réel, ne jamais s'appuyer dessus
+en dehors des environnements de dev/test. Le seed est idempotent (sûr à relancer).
 
-### Build & Quality
+### Build & qualité
 
 ```bash
-# Build all workspaces
+# Builder tous les workspaces
 pnpm build
 
-# Lint all code
+# Linter tout le code
 pnpm lint
 ```
 
-### Docker Environment
+### Environnement Docker
 
 ```bash
-# Start infrastructure (PostgreSQL + Redis)
+# Démarrer l'infrastructure (PostgreSQL + Redis)
 docker-compose up -d postgres redis
 
-# Start all services
+# Démarrer tous les services
 docker-compose up -d
 
-# View logs
+# Voir les logs
 docker-compose logs -f api
 ```
 
-## Git Workflow
+## Workflow Git
 
-- **Always create a dedicated branch before starting any piece of work**, no
-  matter how small it looks — git hygiene, documentation-only changes,
-  config tweaks included. There is no "too minor to branch" exception.
-- **Never commit directly to `main`**, regardless of change size. The
-  `.gitignore` cleanup committed straight to `main` on 2026-08-19 was a
-  one-off exception explicitly requested at the time — it is **not** a
-  standing pattern to repeat. Every change, however trivial, goes through a
-  branch (and a PR when one is opened).
-- **Never mix frontend and backend on the same branch**, even within a
-  single logical chantier. If a chantier touches both (e.g. "wire the admin
-  dashboard to real data"), split it into at least two branches: one for the
-  backend (new endpoints/models), one for the frontend (consuming those
-  endpoints) — each with its own tests, its own diff, its own validation
-  before moving to the next. The frontend must never depend on a backend
-  that hasn't been merged to `main` yet in order to be testable — backend
-  first, tested and merged, only then the frontend that consumes it.
-  More broadly: **one branch = one precise feature**, not a bundle of
-  changes grouped because "it's the same theme." If you notice you're
-  editing files across two different domains (e.g. `apps/api` *and*
-  `apps/web`, or two distinct business modules) on the same branch, stop and
-  propose a split before continuing.
+- **Toujours créer une nouvelle branche dédiée avant de commencer un chantier**, peu
+  importe à quel point il paraît minime — hygiène git, changements purement
+  documentaires, ajustements de config inclus. Il n'existe pas d'exception "trop
+  mineur pour une branche".
+- **Ne jamais committer directement sur `main`**, quelle que soit la taille du
+  changement. Le nettoyage du `.gitignore` committé directement sur `main` le
+  2026-08-19 était une exception ponctuelle explicitement demandée à ce moment-là —
+  ce n'est **pas** un modèle à reproduire. Chaque changement, même trivial, passe
+  par une branche (et une PR quand elle est ouverte).
+- **Ne jamais mélanger frontend et backend sur une même branche**, même au sein
+  d'un seul chantier logique. Si un chantier touche les deux (ex. "brancher le
+  dashboard admin sur de vraies données"), le scinder en au moins deux branches :
+  une pour le backend (nouveaux endpoints/modèles), une pour le frontend
+  (consommant ces endpoints) — chacune avec ses propres tests, son propre diff,
+  sa propre validation avant de passer à la suivante. Le frontend ne doit jamais
+  dépendre d'un backend qui n'a pas encore été mergé sur `main` pour être
+  testable — le backend d'abord, testé et mergé, seulement ensuite le frontend
+  qui le consomme. Plus largement : **une branche = une fonctionnalité précise**,
+  pas un ensemble de changements regroupés parce que "c'est le même thème". Si tu
+  remarques que tu modifies des fichiers dans deux domaines différents (ex.
+  `apps/api` *et* `apps/web`, ou deux modules métier distincts) sur la même
+  branche, arrête-toi et propose une scission avant de continuer.
+- **Tous les messages de commit et toute documentation écrite dans ce dépôt**
+  (`CLAUDE.md`, `STATUT_MODULES.md`, `SETUP.md`, README, commentaires de code
+  significatifs, descriptions de PR) **doivent être rédigés en français**. Le
+  code lui-même (noms de variables, fonctions, modèles) reste en anglais par
+  convention technique standard — cette règle concerne uniquement le texte
+  destiné à être lu par des humains (documentation, commits, PR), pas les
+  identifiants de code.
 
-## RBAC (Role-Based Access Control)
+## RBAC (contrôle d'accès basé sur les rôles)
 
-The platform implements fine-grained RBAC with these primary roles:
+La plateforme implémente un RBAC fin avec les rôles principaux suivants :
 
-### Administrative Roles
-- **ADMIN / SUPER_ADMIN**: Full system access, user/role/permission management, system maintenance
-- **SCOLARITE**: Student enrollment (Parcoursup integration, INE/matricule management), document validation, timetables, diploma issuance, academic leave processing
-- **COMPTABLE / RH**: Finance management, online payments, personnel management
+### Rôles administratifs
+- **ADMIN / SUPER_ADMIN** : Accès système complet, gestion des utilisateurs/rôles/permissions, maintenance système
+- **SCOLARITE** : Inscription des étudiants (intégration Parcoursup, gestion INE/matricule), validation documentaire, emplois du temps, délivrance des diplômes, traitement des congés académiques
+- **COMPTABLE / RH** : Gestion financière, paiements en ligne, gestion du personnel
 
-### Academic Roles
-- **ENSEIGNANT**: Course design, grade entry for assigned courses, LMS sync
-- **CHEF_DEPARTEMENT**: Note validation (first stage), section management, program oversight for their department
-- **DGA_ETUDES**: Course validation and publishing, note validation (Commission Pédagogique stage)
-- **DIRECTEUR_GENERAL**: Final note validation (Grand Conseil stage)
+### Rôles académiques
+- **ENSEIGNANT** : Conception de cours, saisie des notes pour les cours assignés, synchronisation LMS
+- **CHEF_DEPARTEMENT** : Validation des notes (première étape), gestion des sections, supervision du programme pour son département
+- **DGA_ETUDES** : Validation et publication des cours, validation des notes (étape Commission Pédagogique)
+- **DIRECTEUR_GENERAL** : Validation finale des notes (étape Grand Conseil)
 
-### Innovation & Support Roles
-- **DIRECTEUR_INNOVATION**: Pedagogical innovation center management, certificate program oversight
-- **RESPONSABLE_PUBLICATIONS**: University publications, ISBN attribution, validation committee
-- **RESPONSABLE_IT**: IT support request management, equipment tracking
+### Rôles Innovation & Support
+- **DIRECTEUR_INNOVATION** : Gestion du centre d'innovation pédagogique, supervision des programmes de certification
+- **RESPONSABLE_PUBLICATIONS** : Publications universitaires, attribution ISBN, comité de validation
+- **RESPONSABLE_IT** : Gestion des requêtes de support informatique, suivi du matériel
 
-### Student & Parent Roles
-- **ETUDIANT**: Profile access, online courses, assignment submission, grade consultation, document requests
-- **PARENT**: Student attendance/results consultation, administration contact
+### Rôles Étudiant & Parent
+- **ETUDIANT** : Accès au profil, cours en ligne, remise de devoirs, consultation des notes, demandes de documents
+- **PARENT** : Consultation de l'assiduité/des résultats de l'étudiant, contact avec l'administration
 
-### Library Roles
-- **BIBLIOTHECAIRE**: Catalog management, loan processing, subscription management
-- **RESPONSABLE_NUMERISATION**: Digitization of theses and memoirs, metadata management
+### Rôles Bibliothèque
+- **BIBLIOTHECAIRE** : Gestion du catalogue, traitement des emprunts, gestion des abonnements
+- **RESPONSABLE_NUMERISATION** : Numérisation des thèses et mémoires, gestion des métadonnées
 
-## Authentication Architecture
+## Architecture d'authentification
 
-- **Access tokens**: Short-lived JWT (15 min default), passed in `Authorization: Bearer <token>` header
-- **Refresh tokens**: Long-lived (7 days default), stored in secure HTTP-only cookie
-- **Token rotation**: Each refresh generates new refresh token and revokes old one
-- **Security features**: Account lockout after failed attempts, audit logging, token revocation
+- **Access tokens** : JWT de courte durée (15 min par défaut), transmis dans l'en-tête `Authorization: Bearer <token>`
+- **Refresh tokens** : longue durée (7 jours par défaut), stockés dans un cookie sécurisé HTTP-only
+- **Rotation des tokens** : chaque refresh génère un nouveau refresh token et révoque l'ancien
+- **Fonctionnalités de sécurité** : verrouillage de compte après échecs répétés, journal d'audit, révocation de tokens
 
-## Critical Workflows
+## Workflows critiques
 
-### 5-Stage Note Validation Workflow
+### Workflow de validation des notes à 5 étapes
 
-All grades submitted by teachers must pass through this validation chain before being finalized:
+Toutes les notes soumises par les enseignants doivent passer par cette chaîne de validation avant d'être finalisées :
 
-1. **Section** (Enseignant/Section Head)
-   - Initial grade entry by the teacher
-   - Section-level verification and approval
+1. **Section** (Enseignant/Chef de section)
+   - Saisie initiale des notes par l'enseignant
+   - Vérification et approbation au niveau section
 
-2. **Comité de Programme** (Program Committee)
-   - Review of grades for program consistency
-   - Cross-section validation
+2. **Comité de Programme**
+   - Revue des notes pour la cohérence du programme
+   - Validation inter-sections
 
-3. **Conseil de Département** (Department Council - Chef de Département)
-   - Department head reviews and validates grades
-   - Ensures alignment with department standards
+3. **Conseil de Département** (Chef de Département)
+   - Le chef de département revoit et valide les notes
+   - Garantit l'alignement avec les standards du département
 
-4. **Commission Pédagogique** (Pedagogical Commission - DGA Études)
-   - Pedagogical oversight and validation
-   - Quality assurance across all departments
+4. **Commission Pédagogique** (DGA Études)
+   - Supervision et validation pédagogique
+   - Assurance qualité sur l'ensemble des départements
 
-5. **Grand Conseil** (Grand Council - Directeur Général)
-   - Final institutional approval
-   - Official publication of grades
+5. **Grand Conseil** (Directeur Général)
+   - Approbation institutionnelle finale
+   - Publication officielle des notes
 
-**Important**: Each stage requires explicit approval and generates audit trail. Grades cannot be modified once validated at a given stage without going through a formal correction workflow.
+**Important** : chaque étape nécessite une approbation explicite et génère une trace d'audit. Les notes ne peuvent pas être modifiées une fois validées à une étape donnée sans passer par un workflow de correction formel.
 
-### Parcoursup Integration (Enrollment)
+### Intégration Parcoursup (Inscription)
 
-The platform integrates with France's national enrollment system:
+La plateforme s'intègre avec le système national d'inscription français :
 
-- **INE (Identifiant National Étudiant)**: Students from Parcoursup have an INE number
-- **Matricule ISSEG**: Locally enrolled students receive an ISSEG matricule
-- **Dual tracking**: System must handle both identifier types and map them appropriately
-- **Data synchronization**: Enrollment data is imported from Parcoursup for registered students
+- **INE (Identifiant National Étudiant)** : les étudiants venant de Parcoursup ont un numéro INE
+- **Matricule ISSEG** : les étudiants inscrits localement reçoivent un matricule ISSEG
+- **Double suivi** : le système doit gérer les deux types d'identifiants et les faire correspondre correctement
+- **Synchronisation des données** : les données d'inscription sont importées depuis Parcoursup pour les étudiants concernés
 
-## Key Integration Points
+## Points d'intégration clés
 
 ### Scolarité ↔ Bibliothèque
-The Library module must call the Scolarité API to verify student regularity before allowing loans:
+Le module Bibliothèque doit appeler l'API Scolarité pour vérifier la régularité de l'étudiant avant d'autoriser un emprunt :
 ```
 GET /api/v1/etudiants/:matricule/statut-regularite
 ```
-Returns: `{ isRegular: boolean, reason?: string, lastPaymentDate?: Date }`
+Retourne : `{ isRegular: boolean, reason?: string, lastPaymentDate?: Date }`
 
 ### Pédagogie ↔ Moodle Service
-Heavy synchronization operations should be delegated to `services/moodle-service` to avoid blocking the main API.
+Les opérations de synchronisation lourdes doivent être déléguées à `services/moodle-service` pour ne pas bloquer l'API principale.
 
 ### Scolarité ↔ Parcoursup
-- Import enrollment data via Parcoursup API integration
-- Map INE to ISSEG matricule
-- Handle dual identifier system for student tracking
+- Import des données d'inscription via l'intégration API Parcoursup
+- Correspondance INE ↔ matricule ISSEG
+- Gestion du double système d'identifiants pour le suivi des étudiants
 
 ### Départements ↔ Pédagogie
-- Department heads validate grades for their sections
-- Validation workflow status must be tracked at each stage
-- Audit trail required for all validation actions
+- Les chefs de département valident les notes de leurs sections
+- Le statut du workflow de validation doit être suivi à chaque étape
+- Trace d'audit requise pour toutes les actions de validation
 
-### Innovation ↔ External Services
-- ISBN API for university publications
-- LMS platform integration (currently Google Workspace, migration to Moodle planned)
-- IT support ticketing system integration
+### Innovation ↔ Services externes
+- API ISBN pour les publications universitaires
+- Intégration plateforme LMS (actuellement Google Workspace, migration vers Moodle prévue)
+- Intégration système de billetterie pour le support informatique
 
-## Domain-Specific Context Files
+## Fichiers de contexte par domaine
 
-For work on specific modules, refer to these context files:
-- Scolarité & Enrollment: `.claude/agent-scolarite.md`
-- Pédagogie, Grades & LMS: `.claude/agent-pedagogie.md`
-- Bibliothèque & Digitization: `.claude/agent-bibliotheque.md`
-- Départements & Validation: `.claude/agent-departements.md`
-- Innovation & Publications: `.claude/agent-innovation.md`
-- DevOps & Infrastructure: `.claude/agent-devops.md`
+Pour travailler sur un module spécifique, se référer à ces fichiers de contexte :
+- Scolarité & Inscription : `.claude/agent-scolarite.md`
+- Pédagogie, Notes & LMS : `.claude/agent-pedagogie.md`
+- Bibliothèque & Numérisation : `.claude/agent-bibliotheque.md`
+- Départements & Validation : `.claude/agent-departements.md`
+- Innovation & Publications : `.claude/agent-innovation.md`
+- DevOps & Infrastructure : `.claude/agent-devops.md`
 
-## Environment Variables
+## Variables d'environnement
 
-Copy `.env.example` to `.env` and configure:
-- Database credentials (`DATABASE_URL`)
-- JWT secrets (generate with: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`)
-- Admin credentials for seeding
-- CORS origin for frontend
+Copier `.env.example` vers `.env` et configurer :
+- Identifiants de base de données (`DATABASE_URL`)
+- Secrets JWT (générer avec : `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`)
+- Identifiants admin pour le seed
+- Origine CORS pour le frontend
 
-## API Documentation
+## Documentation API
 
-When the API is running in development mode, Swagger UI is available at:
-- UI: `http://localhost:3001/api/docs`
-- JSON: `http://localhost:3001/api/docs-json`
+Quand l'API tourne en mode développement, Swagger UI est disponible sur :
+- Interface : `http://localhost:3001/api/docs`
+- JSON : `http://localhost:3001/api/docs-json`
 
-## Business Rules & Constraints
+## Règles métier & contraintes
 
-### Student Regularity
-- Students must be "regular" (fees paid, no administrative holds) to:
-  - Borrow books from the library
-  - Access online course materials
-  - Submit assignments
-  - Receive official transcripts or certificates
+### Régularité étudiante
+Les étudiants doivent être "réguliers" (frais payés, aucun blocage administratif) pour :
+- Emprunter des livres à la bibliothèque
+- Accéder aux contenus de cours en ligne
+- Remettre des devoirs
+- Recevoir des relevés de notes ou certificats officiels
 
-### Grade Validation
-- Grades cannot skip validation stages
-- Each validation stage must have explicit approval with timestamp and approver ID
-- Corrections to validated grades require a formal amendment workflow
-- Final grades (after Grand Conseil) trigger transcript generation
+### Validation des notes
+- Les notes ne peuvent pas sauter d'étape de validation
+- Chaque étape de validation doit avoir une approbation explicite avec horodatage et identifiant de l'approbateur
+- Les corrections de notes déjà validées nécessitent un workflow de correction formel
+- Les notes finales (après le Grand Conseil) déclenchent la génération du relevé de notes
 
-### Document Management
-- All official documents (attestations, diplomas) must have:
-  - Unique reference number
-  - Digital signature trail
-  - PDF archival copy
-  - Audit log of issuance
+### Gestion documentaire
+- Tous les documents officiels (attestations, diplômes) doivent avoir :
+  - Un numéro de référence unique
+  - Une trace de signature numérique
+  - Une copie PDF archivée
+  - Un journal d'audit de la délivrance
 
-### Library Loans
+### Emprunts en bibliothèque
 
-Loan limits vary by borrower category — there is no single flat rule. Source:
-`agent-bibliotheque.md` §3.1 (stakeholder interview), confirmed as the
-authoritative version during the Bibliothèque planning audit (2026-08-19) —
-this table supersedes any earlier simplified "3 loans / 14 days" wording.
+Les limites d'emprunt varient selon la catégorie d'emprunteur — il n'existe pas de règle unique. Source :
+`agent-bibliotheque.md` §3.1 (entretien avec les parties prenantes), confirmée comme
+version faisant autorité lors de l'audit de planification Bibliothèque (2026-08-19) —
+ce tableau prévaut sur toute formulation simplifiée antérieure du type "3 emprunts / 14 jours".
 
-| Borrower category | Loan duration | Max simultaneous loans | Renewal |
+| Catégorie d'emprunteur | Durée d'emprunt | Emprunts simultanés max | Renouvellement |
 |---|---|---|---|
-| Student L1-L2 | 14 days | 3 items | 1x (if no reservation pending) |
-| Student L3-M2 | 21 days | 5 items | 1x |
-| Enseignant (teacher) | 30 days | 10 items | 2x |
-| Personnel Admin | 14 days | 3 items | 1x |
+| Étudiant L1-L2 | 14 jours | 3 ouvrages | 1x (si aucune réservation en attente) |
+| Étudiant L3-M2 | 21 jours | 5 ouvrages | 1x |
+| Enseignant | 30 jours | 10 ouvrages | 2x |
+| Personnel Admin | 14 jours | 3 ouvrages | 1x |
 
-- Late returns trigger automatic notifications and account holds
-- **Home loans (`POST /emprunts`) are restricted to `ENSEIGNANT` at launch** —
-  students are limited to on-site catalog consultation (`GET /ouvrages`) and
-  reservations (`POST /reservations`), per the Bibliothèque lead interview
-  (Groupe 4, 2026-08-05). Enforced via the `BIBLIOTHEQUE_EMPRUNT_DOMICILE_TYPES_AUTORISES`
-  config value (`empruntDomicileTypesAutorises` in `configuration.ts`), not a
-  hardcoded check — extending home loans to students is a config change
-  (add `ETUDIANT_L1_L2`/`ETUDIANT_L3_M2`), not a new code chantier.
+- Les retards déclenchent des notifications automatiques et des blocages de compte
+- **Les emprunts à domicile (`POST /emprunts`) sont réservés aux `ENSEIGNANT` au
+  lancement** — les étudiants sont limités à la consultation du catalogue sur
+  place (`GET /ouvrages`) et aux réservations (`POST /reservations`), selon
+  l'entretien avec le responsable Bibliothèque (Groupe 4, 2026-08-05). Appliqué
+  via la valeur de configuration `BIBLIOTHEQUE_EMPRUNT_DOMICILE_TYPES_AUTORISES`
+  (`empruntDomicileTypesAutorises` dans `configuration.ts`), pas une vérification
+  codée en dur — étendre les emprunts à domicile aux étudiants est un changement
+  de configuration (ajouter `ETUDIANT_L1_L2`/`ETUDIANT_L3_M2`), pas un nouveau
+  chantier de code.
 
-## Important Notes
+## Notes importantes
 
-- **Package Manager**: This project uses `pnpm@9.0.0` (enforced via `packageManager` field)
-- **Prisma Location**: Schema and migrations are in `apps/api/prisma/`
-- **Shared Code**: Always consider if code belongs in `packages/*` before adding it to a specific app
-- **Security**: All endpoints use validation (class-validator), DTOs must whitelist properties
-- **Error Handling**: Global exception filter handles Prisma errors and HTTP exceptions
-- **Data Isolation**: Multi-tenancy considerations for department-specific data
-- **Audit Trail**: All mutations (create/update/delete) must be logged in AuditLog table
+- **Gestionnaire de paquets** : ce projet utilise `pnpm@9.0.0` (imposé via le champ `packageManager`)
+- **Emplacement Prisma** : le schéma et les migrations sont dans `apps/api/prisma/`
+- **Code partagé** : toujours envisager si un code a sa place dans `packages/*` avant de l'ajouter à une app spécifique
+- **Sécurité** : tous les endpoints utilisent la validation (class-validator), les DTOs doivent whitelister leurs propriétés
+- **Gestion des erreurs** : le filtre d'exceptions global gère les erreurs Prisma et les exceptions HTTP
+- **Isolation des données** : considérations multi-tenant pour les données propres à chaque département
+- **Trace d'audit** : toutes les mutations (create/update/delete) doivent être journalisées dans la table AuditLog
