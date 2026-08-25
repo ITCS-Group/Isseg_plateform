@@ -1,0 +1,33 @@
+services:
+  moodle:
+    # Image officielle Moodle HQ — PHP + Apache SEULEMENT, pas une image
+    # applicative "tout-en-un" comme bitnami/moodle (payant depuis 2025,
+    # voir SETUP.md pour l'historique de cette décision). Le code source
+    # Moodle lui-même est cloné séparément dans MOODLE_SRC_DIR et monté en
+    # volume — voir SETUP.md.
+    # PHP 8.3 : dans la plage supportée par Moodle 4.5 (>= 8.1.0, 8.3.x ok).
+    image: moodlehq/moodle-php-apache:8.3-bookworm
+    container_name: isseg-moodle-app
+    ports:
+      - "${MOODLE_APP_PORT:-8090}:80"
+    environment:
+      MOODLE_DB_HOST: ${MOODLE_DB_HOST}
+      MOODLE_DB_PORT: ${MOODLE_DB_PORT:-5432}
+      MOODLE_DB_NAME: ${MOODLE_DB_NAME}
+      MOODLE_DB_USER: ${MOODLE_DB_USER}
+      MOODLE_DB_PASSWORD: ${MOODLE_DB_PASSWORD}
+      MOODLE_SITE_URL: ${MOODLE_SITE_URL}
+    volumes:
+      # Code source Moodle (cloné manuellement — voir SETUP.md), monté comme
+      # docroot Apache.
+      - ${MOODLE_SRC_DIR:-./moodle-src}:/var/www/html
+      # Notre config.php écrit à la main (pas le template CI de moodle-docker),
+      # monté par-dessus le fichier du même nom dans le docroot.
+      - ./config.php:/var/www/html/config.php:ro
+      # moodledata : volontairement hors du docroot (exigence de sécurité
+      # Moodle), volume nommé dédié.
+      - moodledata_data:/var/www/moodledata
+    restart: unless-stopped
+
+volumes:
+  moodledata_data:

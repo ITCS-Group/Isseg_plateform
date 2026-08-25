@@ -45,6 +45,13 @@ test (`ChangeMe123!`, temporaire — cf. `apps/api/prisma/seed.ts`).
 | `RESPONSABLE_NUMERISATION` | Bibliothèque (documents académiques — thèses/mémoires) | ✅ Backend livré (même chantier) : `/documents-academiques` (CRUD, visibilité conditionnée à `diffusionAutorisee`/embargo). Aucun écran frontend. |
 | `ETUDIANT` | Bibliothèque (lecture catalogue, réservation) | ✅ Backend livré (même chantier) pour la partie Bibliothèque uniquement : `GET /ouvrages`, `GET /emprunts` (scopé à ses propres emprunts, actuellement toujours vide), `POST /reservations`, lecture `/documents-academiques` diffusés. **Ne peut plus emprunter à domicile depuis le 20/08** (restriction ENSEIGNANT-only, réactivable par configuration sans nouveau code). Le **Portail Étudiant** plus large (profil, notes, autres documents) reste non implémenté — aucun écran frontend dans les deux cas. |
 
+## Notes opérationnelles
+
+- **Token API Moodle** généré le 25/08/2026, expire le 24/09/2026 — à
+  régénérer avant cette date si le client Moodle (`MoodleClientService`)
+  doit être branché. Procédure complète :
+  `services/moodle-service/SETUP.md` § 7.5.
+
 ## Règle de mise à jour
 
 Quand un module métier est livré pour un rôle listé dans la première section,
