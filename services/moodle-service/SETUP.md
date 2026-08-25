@@ -164,29 +164,114 @@ psql "postgresql://<user>:<password>@<host-direct>:5432/moodleDb?sslmode=require
    endroit où ce mot de passe définitif doit être saisi, jamais dans une
    commande CLI. Le mot de passe jetable devient alors invalide.
 
+### ⚠️ Bug rencontré : nom d'utilisateur en majuscule = connexion impossible
+
+Si `MOODLE_ADMIN_USERNAME` contient une majuscule (ex. `Administrateur`),
+**la connexion échouera systématiquement** avec "Invalid login, please try
+again", quel que soit le mot de passe — y compris juste après l'install.
+
+**Cause** : `admin/cli/install_database.php` stocke le nom d'utilisateur
+**tel quel** dans `mdl_user.username`, sans le forcer en minuscule. Mais
+`authenticate_user_login()` (le code de connexion web) met systématiquement
+le nom saisi en minuscule avant de comparer en base — une comparaison
+stricte, jamais satisfaite si la valeur stockée a une majuscule. Confirmé en
+isolant le problème via un script PHP direct (`authenticate_user_login()`
+et `password_verify()` appelés hors HTTP) plutôt qu'en devinant depuis le
+navigateur.
+
+**Piège en plus** : `admin/cli/reset_password.php --username=Administrateur`
+(avec la majuscule) ne trouve pas non plus la ligne existante — et au lieu
+d'échouer proprement, **il crée un second compte** avec le nom en minuscule
+(`administrateur`), qui n'est pas admin du site. Vérifier `mdl_config` clé
+`siteadmins` pour confirmer quel id est le vrai admin avant toute correction.
+
+**Correctif** : utiliser un `MOODLE_ADMIN_USERNAME` **entièrement en
+minuscule** dans `.env` dès le départ. Si le problème survient quand même :
+
+```sql
+-- Vérifier qui est le vrai admin avant de toucher à quoi que ce soit :
+SELECT value FROM mdl_config WHERE name = 'siteadmins';  -- id du vrai admin
+
+-- Corriger la casse du vrai compte (remplacer <id> par l'id ci-dessus) :
+UPDATE mdl_user SET username = lower(username) WHERE id = <id>;
+
+-- Si reset_password.php a créé un doublon entre-temps, le supprimer
+-- (vérifier d'abord qu'il n'a pas de rôle ni de référence ailleurs) :
+DELETE FROM mdl_user WHERE username = '<doublon minuscule>' AND id != <id du vrai admin>;
+```
+
+Puis relancer `admin/cli/reset_password.php --username=<username minuscule>
+--password=... --ignore-password-policy` pour fixer un mot de passe
+fonctionnel, et se reconnecter normalement (étape 6).
+
 ## 7. Activer les Web Services REST + générer un token API
 
 Nécessaire pour que `MoodleClientService` (côté `services/moodle-service/`)
 puisse s'authentifier plus tard — aucune fonction Moodle précise n'est
 appelée à ce stade, seule l'infrastructure d'auth est préparée ici.
 
-1. **Site administration → Advanced features** (Fonctionnalités avancées) :
-   cocher **Enable web services** (Activer les services web).
-2. **Site administration → Server → Web services → Manage protocols**
-   (Gérer les protocoles) : activer **REST protocol**.
-3. **Site administration → Server → Web services → External services**
-   (Services externes) : soit utiliser un service existant, soit créer un
-   service dédié (ex. "ISSEG Sync") — **sans y ajouter de fonction précise
-   pour l'instant**, ça attend le mapping de données (entretiens Moodle).
-4. Créer un **utilisateur de service dédié** (pas le compte admin
-   personnel) avec uniquement la capacité `webservice/rest:use` — pas un
-   accès total.
-5. **Site administration → Server → Web services → Manage tokens**
-   (Gérer les jetons) : créer un token pour cet utilisateur et le service
-   choisis à l'étape 3.
-6. Reporter ce token dans `services/moodle-service/.env`
-   (`MOODLE_API_KEY`) — jamais committé, jamais en dur dans un fichier
-   suivi par git.
+### 7.1 Activer les web services et le protocole REST
+
+1. **Site administration → General → Advanced features** : cocher
+   **Enable web services**, Save changes.
+   Vérification : `SELECT value FROM mdl_config WHERE name = 'enablewebservices';` → `1`.
+2. **Site administration → Server → Web services → Manage protocols** :
+   cliquer l'icône œil sur la ligne **REST protocol** pour l'activer.
+   Vérification : `SELECT value FROM mdl_config WHERE name = 'webserviceprotocols';` → `rest`.
+
+### 7.2 Créer un utilisateur de service dédié (pas le compte admin)
+
+**Site administration → Users → Add a new user.** Un compte séparé, dont le
+seul rôle est de porter le token — jamais le compte admin personnel.
+Exemple utilisé : username `isseg-sync-service`, nom "ISSEG Sync Service".
+
+### 7.3 Créer un rôle minimal (une seule capacité)
+
+Par défaut, aucun rôle standard n'accorde `webservice/rest:use` — il faut un
+rôle dédié plutôt que de sur-attribuer un rôle existant (Manager, etc.) :
+
+1. **Site administration → Users → Permissions → Define roles → Add a new
+   role.** "Use role or archetype" = **No role** (on part de zéro, pas d'un
+   archétype qui embarquerait d'autres capacités).
+2. Short name (ex. `isseg_sync_service`), full name, cocher **System** dans
+   "Context types where this role may be assigned".
+3. Filtrer les capacités sur `webservice/rest:use`, cocher **Allow**
+   uniquement sur celle-ci. Create this role.
+4. **Site administration → Users → Permissions → Assign system roles** :
+   choisir ce rôle, ajouter l'utilisateur créé en 7.2 dans "Existing users".
+   Vérification :
+   ```sql
+   SELECT u.username, r.shortname, ctx.contextlevel
+   FROM mdl_role_assignments ra
+   JOIN mdl_user u ON u.id = ra.userid
+   JOIN mdl_role r ON r.id = ra.roleid
+   JOIN mdl_context ctx ON ctx.id = ra.contextid
+   WHERE r.shortname = '<short name du rôle>';
+   -- contextlevel doit valoir 10 (CONTEXT_SYSTEM)
+   ```
+
+### 7.4 Créer un service externe dédié, sans fonction
+
+**Site administration → Server → Web services → External services → Add.**
+Nom (ex. "ISSEG Sync"), short name, cocher **Enabled** et **Authorised users
+only**. Create service. Sur l'écran "Add functions to the service" qui
+suit : **ne rien ajouter** — "This service has no functions" est l'état
+voulu à ce stade (attend le mapping de données, entretiens Moodle).
+
+Puis, depuis la liste des services externes, lien **Authorised users** sur
+ce service : ajouter l'utilisateur créé en 7.2 (le déplacer vers
+"Authorised users").
+
+### 7.5 Générer le token
+
+**Site administration → Server → Web services → Manage tokens → Create
+token.** User = l'utilisateur de service (7.2), Service = le service dédié
+(7.4). Laisser "Valid until" à sa valeur par défaut (~1 mois) sauf besoin
+contraire — **noter la date d'expiration quelque part** (voir
+`STATUT_MODULES.md`), le token n'est affiché qu'une seule fois à l'écran.
+
+Reporter la valeur dans `services/moodle-service/.env` (`MOODLE_API_KEY`) —
+jamais committé, jamais en dur dans un fichier suivi par git.
 
 ## Ce qui n'est délibérément PAS fait ici
 
