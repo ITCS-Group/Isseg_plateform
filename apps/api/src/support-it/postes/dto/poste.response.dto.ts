@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { StatutPoste } from '@prisma/client';
+import { PaginationMetaDto } from '../../../common/dto/pagination.dto';
 
 export class PosteResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -19,6 +20,14 @@ export class PosteResponseDto {
 
   @ApiProperty()
   updatedAt: Date;
+}
+
+export class PaginatedPosteResponseDto {
+  @ApiProperty({ type: [PosteResponseDto] })
+  data: PosteResponseDto[];
+
+  @ApiProperty({ type: PaginationMetaDto })
+  meta: PaginationMetaDto;
 }
 
 export class DisponibilitePosteDto {

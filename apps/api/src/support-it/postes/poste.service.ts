@@ -1,8 +1,9 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { StatutPoste } from '@prisma/client';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreatePosteDto } from './dto/create-poste.dto';
-import { DisponibilitePosteDto, PosteResponseDto } from './dto/poste.response.dto';
+import { DisponibilitePosteDto, PaginatedPosteResponseDto, PosteResponseDto } from './dto/poste.response.dto';
 import { ListPosteQueryDto } from './dto/list-poste-query.dto';
 import { UpdatePosteStatutDto } from './dto/update-poste-statut.dto';
 
@@ -18,11 +19,25 @@ export class PosteService {
     return created;
   }
 
-  findAll(query: ListPosteQueryDto): Promise<PosteResponseDto[]> {
-    return this.prisma.poste.findMany({
-      where: { salle: query.salle, statut: query.statut },
-      orderBy: [{ salle: 'asc' }, { createdAt: 'asc' }],
-    });
+  async findAll(query: ListPosteQueryDto): Promise<PaginatedPosteResponseDto> {
+    const where = { salle: query.salle, statut: query.statut };
+    const [data, total] = await Promise.all([
+      this.prisma.poste.findMany({
+        where,
+        orderBy: [{ salle: 'asc' }, { createdAt: 'asc' }],
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.poste.count({ where }),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data, meta };
   }
 
   async findOne(id: string): Promise<PosteResponseDto> {

@@ -6,8 +6,10 @@ import { RequeteService } from './requete.service';
 interface PrismaMock {
   personnel: { findUnique: jest.Mock };
   technicien: { findFirst: jest.Mock };
-  requete: { create: jest.Mock; findMany: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
+  requete: { create: jest.Mock; findMany: jest.Mock; count: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
 }
+
+const PAGE_1 = { page: 1, limit: 20 };
 
 const DEMANDEUR = { utilisateur: { nom: 'Diallo', prenom: 'Fatou' } };
 
@@ -52,6 +54,7 @@ describe('RequeteService', () => {
       requete: {
         create: jest.fn().mockResolvedValue(makeRow()),
         findMany: jest.fn().mockResolvedValue([makeRow()]),
+        count: jest.fn().mockResolvedValue(1),
         findUnique: jest.fn().mockResolvedValue(makeRow()),
         update: jest.fn().mockResolvedValue(makeRow({ statut: StatutRequete.CLOTUREE, dateCloture: new Date() })),
       },
@@ -89,33 +92,43 @@ describe('RequeteService', () => {
   });
 
   describe('findAll', () => {
-    it('appelant sans profil Personnel ni Technicien → liste vide', async () => {
+    it('appelant sans profil Personnel ni Technicien → page vide, aucune requête DB', async () => {
       prisma.personnel.findUnique.mockResolvedValue(null);
-      const result = await service.findAll({}, makeUser({ roles: ['ETUDIANT'] }));
-      expect(result).toEqual([]);
+      const result = await service.findAll(PAGE_1, makeUser({ roles: ['ETUDIANT'] }));
+      expect(result).toEqual({ data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 1 } });
       expect(prisma.requete.findMany).not.toHaveBeenCalled();
     });
 
     it('demandeur → filtre sur son propre demandeurId', async () => {
-      await service.findAll({}, makeUser({ roles: ['ENSEIGNANT'] }));
+      await service.findAll(PAGE_1, makeUser({ roles: ['ENSEIGNANT'] }));
       expect(prisma.requete.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ demandeurId: 'pers-1' }) }),
+        expect.objectContaining({ where: expect.objectContaining({ demandeurId: 'pers-1' }), skip: 0, take: 20 }),
       );
     });
 
     it('TECHNICIEN → filtre sur le sous-service de son profil Technicien', async () => {
       prisma.technicien.findFirst.mockResolvedValue({ id: 'tech-1', sousService: SousServiceIT.CYBER });
-      await service.findAll({}, makeUser({ roles: ['TECHNICIEN'] }));
+      await service.findAll(PAGE_1, makeUser({ roles: ['TECHNICIEN'] }));
       expect(prisma.requete.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ sousServiceCible: SousServiceIT.CYBER }) }),
       );
     });
 
     it('RESPONSABLE_IT → aucun filtre de périmètre', async () => {
-      await service.findAll({}, makeUser({ roles: ['RESPONSABLE_IT'] }));
+      await service.findAll(PAGE_1, makeUser({ roles: ['RESPONSABLE_IT'] }));
       expect(prisma.requete.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.not.objectContaining({ demandeurId: expect.anything() }) }),
       );
+    });
+
+    it('page 2, limite 5 → skip/take calculés correctement, meta reflète le total', async () => {
+      prisma.requete.count.mockResolvedValue(12);
+      const result = await service.findAll(
+        { page: 2, limit: 5 },
+        makeUser({ roles: ['RESPONSABLE_IT'] }),
+      );
+      expect(prisma.requete.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 5, take: 5 }));
+      expect(result.meta).toEqual({ total: 12, page: 2, limit: 5, totalPages: 3 });
     });
   });
 

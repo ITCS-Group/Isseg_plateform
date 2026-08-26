@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } 
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreatePosteDto } from './dto/create-poste.dto';
 import { ListPosteQueryDto } from './dto/list-poste-query.dto';
-import { DisponibilitePosteDto, PosteResponseDto } from './dto/poste.response.dto';
+import { DisponibilitePosteDto, PaginatedPosteResponseDto, PosteResponseDto } from './dto/poste.response.dto';
 import { UpdatePosteStatutDto } from './dto/update-poste-statut.dto';
 import { PosteService } from './poste.service';
 
@@ -24,8 +24,8 @@ export class PosteController {
 
   @Get()
   @ApiOperation({ summary: 'Lister les postes' })
-  @ApiResponse({ status: 200, type: [PosteResponseDto] })
-  findAll(@Query() query: ListPosteQueryDto): Promise<PosteResponseDto[]> {
+  @ApiResponse({ status: 200, type: PaginatedPosteResponseDto })
+  findAll(@Query() query: ListPosteQueryDto): Promise<PaginatedPosteResponseDto> {
     return this.posteService.findAll(query);
   }
 

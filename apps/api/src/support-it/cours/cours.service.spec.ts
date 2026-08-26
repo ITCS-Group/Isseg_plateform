@@ -2,7 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { CoursSupportITService } from './cours.service';
 
 interface PrismaMock {
-  coursSupportIT: { create: jest.Mock; findMany: jest.Mock; findUnique: jest.Mock };
+  coursSupportIT: { create: jest.Mock; findMany: jest.Mock; count: jest.Mock; findUnique: jest.Mock };
 }
 
 const COURS = {
@@ -24,6 +24,7 @@ describe('CoursSupportITService', () => {
       coursSupportIT: {
         create: jest.fn().mockResolvedValue(COURS),
         findMany: jest.fn().mockResolvedValue([COURS]),
+        count: jest.fn().mockResolvedValue(1),
         findUnique: jest.fn().mockResolvedValue(COURS),
       },
     };
@@ -40,9 +41,10 @@ describe('CoursSupportITService', () => {
     expect(result.id).toBe('cours-1');
   });
 
-  it('findAll : retourne la liste', async () => {
-    const result = await service.findAll();
-    expect(result).toHaveLength(1);
+  it('findAll : retourne la liste paginée', async () => {
+    const result = await service.findAll({ page: 1, limit: 20 });
+    expect(result.data).toHaveLength(1);
+    expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
   });
 
   it('findOne : introuvable → NotFoundException', async () => {

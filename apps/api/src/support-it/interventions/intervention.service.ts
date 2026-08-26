@@ -3,8 +3,10 @@ import { Prisma, StatutRequete } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { assertCanViewRequete } from '../common/requete-access.helper';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { CreateInterventionDto } from './dto/create-intervention.dto';
-import { InterventionResponseDto } from './dto/intervention.response.dto';
+import { InterventionResponseDto, PaginatedInterventionResponseDto } from './dto/intervention.response.dto';
+import { ListInterventionQueryDto } from './dto/list-intervention-query.dto';
 
 const INTERVENTION_SELECT = {
   id: true,
@@ -71,7 +73,11 @@ export class InterventionService {
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
-  async findAllForRequete(requeteId: string, user: AuthenticatedUser): Promise<InterventionResponseDto[]> {
+  async findAllForRequete(
+    requeteId: string,
+    query: ListInterventionQueryDto,
+    user: AuthenticatedUser,
+  ): Promise<PaginatedInterventionResponseDto> {
     const requete = await this.prisma.requete.findUnique({ where: { id: requeteId } });
     if (!requete) {
       throw new NotFoundException(`Requête introuvable (id: ${requeteId})`);
@@ -79,12 +85,25 @@ export class InterventionService {
 
     await assertCanViewRequete(this.prisma, requete, user);
 
-    const rows = await this.prisma.intervention.findMany({
-      where: { requeteId },
-      select: INTERVENTION_SELECT,
-      orderBy: { date: 'desc' },
-    });
-    return rows.map(this.toDto);
+    const where = { requeteId };
+    const [rows, total] = await Promise.all([
+      this.prisma.intervention.findMany({
+        where,
+        select: INTERVENTION_SELECT,
+        orderBy: { date: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.intervention.count({ where }),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data: rows.map(this.toDto), meta };
   }
 
   // ── Helpers privés ────────────────────────────────────────────────────────

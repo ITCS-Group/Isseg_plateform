@@ -1,11 +1,16 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, StatutInscriptionCoursSupportIT } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AttestationService } from '../attestations/attestation.service';
 import { CreateEvaluationSupportITDto } from './dto/create-evaluation.dto';
 import { EvaluationSupportITResponseDto } from './dto/evaluation.response.dto';
-import { InscriptionCoursSupportITResponseDto } from './dto/inscription.response.dto';
+import {
+  InscriptionCoursSupportITResponseDto,
+  PaginatedInscriptionCoursSupportITResponseDto,
+} from './dto/inscription.response.dto';
+import { ListInscriptionQueryDto } from './dto/list-inscription-query.dto';
 
 const UNSCOPED_ROLES = ['ADMIN', 'RESPONSABLE_IT'];
 
@@ -58,14 +63,31 @@ export class InscriptionCoursSupportITService {
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
-  async findAll(user: AuthenticatedUser): Promise<InscriptionCoursSupportITResponseDto[]> {
+  async findAll(
+    query: ListInscriptionQueryDto,
+    user: AuthenticatedUser,
+  ): Promise<PaginatedInscriptionCoursSupportITResponseDto> {
     const isUnscoped = user.roles.some((r) => UNSCOPED_ROLES.includes(r));
-    const rows = await this.prisma.inscriptionCoursSupportIT.findMany({
-      where: isUnscoped ? {} : { participantId: user.id },
-      select: INSCRIPTION_SELECT,
-      orderBy: { createdAt: 'desc' },
-    });
-    return rows.map(this.toDto);
+    const where = isUnscoped ? {} : { participantId: user.id };
+
+    const [rows, total] = await Promise.all([
+      this.prisma.inscriptionCoursSupportIT.findMany({
+        where,
+        select: INSCRIPTION_SELECT,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.inscriptionCoursSupportIT.count({ where }),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data: rows.map(this.toDto), meta };
   }
 
   async findOne(id: string, user: AuthenticatedUser): Promise<InscriptionCoursSupportITResponseDto> {

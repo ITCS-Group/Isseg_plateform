@@ -39,12 +39,12 @@ describe('Intégration — MessageService (isseg_test)', () => {
     );
     expect(message.destinataires).toHaveLength(2);
 
-    const recusA = await service.findRecus(destA.id);
-    expect(recusA).toHaveLength(1);
-    expect(recusA[0].contenu).toBe('Réunion demain 10h');
+    const recusA = await service.findRecus({ page: 1, limit: 20 }, destA.id);
+    expect(recusA.data).toHaveLength(1);
+    expect(recusA.data[0].contenu).toBe('Réunion demain 10h');
 
-    const envoyes = await service.findEnvoyes(expediteur.id);
-    expect(envoyes).toHaveLength(1);
+    const envoyes = await service.findEnvoyes({ page: 1, limit: 20 }, expediteur.id);
+    expect(envoyes.data).toHaveLength(1);
   });
 
   it('create : destinataire introuvable → NotFoundException, rien en base', async () => {

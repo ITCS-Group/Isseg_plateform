@@ -94,9 +94,10 @@ describe('Intégration — RequeteService (isseg_test)', () => {
     await service.create({ nature: NatureRequete.AUTRE, description: 'Requête de A' }, demandeurA.id);
     await service.create({ nature: NatureRequete.AUTRE, description: 'Requête de B' }, demandeurB.id);
 
-    const result = await service.findAll({}, toAuthUser(demandeurA.id, ['ENSEIGNANT']));
-    expect(result).toHaveLength(1);
-    expect(result[0].description).toBe('Requête de A');
+    const result = await service.findAll({ page: 1, limit: 20 }, toAuthUser(demandeurA.id, ['ENSEIGNANT']));
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].description).toBe('Requête de A');
+    expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
   });
 
   it('findAll : TECHNICIEN ne voit que les requêtes de son sous-service', async () => {
@@ -108,9 +109,9 @@ describe('Intégration — RequeteService (isseg_test)', () => {
     await service.create({ nature: NatureRequete.PANNE_MATERIEL, description: 'Panne A' }, demandeur.id);
     await service.create({ nature: NatureRequete.INCIDENT_SECURITE, description: 'Incident B' }, demandeur.id);
 
-    const result = await service.findAll({}, toAuthUser(techMaintenance.id, ['TECHNICIEN']));
-    expect(result).toHaveLength(1);
-    expect(result[0].sousServiceCible).toBe(SousServiceIT.MAINTENANCE);
+    const result = await service.findAll({ page: 1, limit: 20 }, toAuthUser(techMaintenance.id, ['TECHNICIEN']));
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].sousServiceCible).toBe(SousServiceIT.MAINTENANCE);
   });
 
   it('findOne : demandeur voit sa requête, mais pas un tiers ENSEIGNANT non lié', async () => {

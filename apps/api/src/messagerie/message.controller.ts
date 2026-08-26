@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from '../auth/interfaces/auth.interfaces';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateMessageDto } from './dto/create-message.dto';
-import { MessageResponseDto } from './dto/message.response.dto';
+import { ListMessageQueryDto } from './dto/list-message-query.dto';
+import { MessageResponseDto, PaginatedMessageResponseDto } from './dto/message.response.dto';
 import { MessageService } from './message.service';
 
 @ApiTags('Messagerie interne')
@@ -26,16 +27,22 @@ export class MessageController {
 
   @Get('recus')
   @ApiOperation({ summary: 'Lister les messages reçus' })
-  @ApiResponse({ status: 200, type: [MessageResponseDto] })
-  findRecus(@CurrentUser() user: AuthenticatedUser): Promise<MessageResponseDto[]> {
-    return this.messageService.findRecus(user.id);
+  @ApiResponse({ status: 200, type: PaginatedMessageResponseDto })
+  findRecus(
+    @Query() query: ListMessageQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PaginatedMessageResponseDto> {
+    return this.messageService.findRecus(query, user.id);
   }
 
   @Get('envoyes')
   @ApiOperation({ summary: 'Lister les messages envoyés' })
-  @ApiResponse({ status: 200, type: [MessageResponseDto] })
-  findEnvoyes(@CurrentUser() user: AuthenticatedUser): Promise<MessageResponseDto[]> {
-    return this.messageService.findEnvoyes(user.id);
+  @ApiResponse({ status: 200, type: PaginatedMessageResponseDto })
+  findEnvoyes(
+    @Query() query: ListMessageQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PaginatedMessageResponseDto> {
+    return this.messageService.findEnvoyes(query, user.id);
   }
 
   @Get(':id')

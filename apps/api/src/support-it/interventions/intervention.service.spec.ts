@@ -7,9 +7,11 @@ interface PrismaMock {
   requete: { findUnique: jest.Mock; update: jest.Mock };
   technicien: { findFirst: jest.Mock };
   personnel: { findUnique: jest.Mock };
-  intervention: { create: jest.Mock; findMany: jest.Mock };
+  intervention: { create: jest.Mock; findMany: jest.Mock; count: jest.Mock };
   $transaction: jest.Mock;
 }
+
+const PAGE_1 = { page: 1, limit: 20 };
 
 const REQUETE = {
   id: 'req-1',
@@ -56,6 +58,7 @@ describe('InterventionService', () => {
       intervention: {
         create: jest.fn().mockResolvedValue(INTERVENTION_ROW),
         findMany: jest.fn().mockResolvedValue([INTERVENTION_ROW]),
+        count: jest.fn().mockResolvedValue(1),
       },
       $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prisma)),
     };
@@ -110,20 +113,23 @@ describe('InterventionService', () => {
   describe('findAllForRequete', () => {
     it('requête introuvable → NotFoundException', async () => {
       prisma.requete.findUnique.mockResolvedValue(null);
-      await expect(service.findAllForRequete('req-1', makeUser())).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.findAllForRequete('req-1', PAGE_1, makeUser())).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('appelant hors périmètre → ForbiddenException', async () => {
       prisma.technicien.findFirst.mockResolvedValue({ id: 'tech-2', sousService: SousServiceIT.CYBER });
       await expect(
-        service.findAllForRequete('req-1', makeUser({ roles: ['TECHNICIEN'] })),
+        service.findAllForRequete('req-1', PAGE_1, makeUser({ roles: ['TECHNICIEN'] })),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('technicien du bon sous-service → liste retournée', async () => {
-      const result = await service.findAllForRequete('req-1', makeUser());
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('int-1');
+    it('technicien du bon sous-service → liste paginée retournée', async () => {
+      const result = await service.findAllForRequete('req-1', PAGE_1, makeUser());
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe('int-1');
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
     });
   });
 });

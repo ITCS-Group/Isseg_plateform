@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { PaginationMetaDto } from '../../../common/dto/pagination.dto';
 
 export class CoursSupportITResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -21,4 +22,12 @@ export class CoursSupportITResponseDto {
 
   @ApiProperty()
   updatedAt: Date;
+}
+
+export class PaginatedCoursSupportITResponseDto {
+  @ApiProperty({ type: [CoursSupportITResponseDto] })
+  data: CoursSupportITResponseDto[];
+
+  @ApiProperty({ type: PaginationMetaDto })
+  meta: PaginationMetaDto;
 }

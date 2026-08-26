@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { NatureRequete, SousServiceIT, StatutRequete } from '@prisma/client';
+import { PaginationMetaDto } from '../../../common/dto/pagination.dto';
 
 export class RequeteResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -37,4 +38,12 @@ export class RequeteResponseDto {
 
   @ApiProperty()
   updatedAt: Date;
+}
+
+export class PaginatedRequeteResponseDto {
+  @ApiProperty({ type: [RequeteResponseDto] })
+  data: RequeteResponseDto[];
+
+  @ApiProperty({ type: PaginationMetaDto })
+  meta: PaginationMetaDto;
 }

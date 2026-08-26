@@ -3,8 +3,10 @@ import { MessageService } from './message.service';
 
 interface PrismaMock {
   utilisateur: { count: jest.Mock };
-  messageInterne: { create: jest.Mock; findMany: jest.Mock; findUnique: jest.Mock };
+  messageInterne: { create: jest.Mock; findMany: jest.Mock; count: jest.Mock; findUnique: jest.Mock };
 }
+
+const PAGE_1 = { page: 1, limit: 20 };
 
 const MESSAGE_ROW = {
   id: 'msg-1',
@@ -26,6 +28,7 @@ describe('MessageService', () => {
       messageInterne: {
         create: jest.fn().mockResolvedValue(MESSAGE_ROW),
         findMany: jest.fn().mockResolvedValue([MESSAGE_ROW]),
+        count: jest.fn().mockResolvedValue(1),
         findUnique: jest.fn().mockResolvedValue(MESSAGE_ROW),
       },
     };
@@ -55,17 +58,22 @@ describe('MessageService', () => {
   });
 
   describe('findRecus / findEnvoyes', () => {
-    it('findRecus filtre sur les destinataires', async () => {
-      await service.findRecus('user-2');
+    it('findRecus filtre sur les destinataires et pagine', async () => {
+      const result = await service.findRecus(PAGE_1, 'user-2');
       expect(prisma.messageInterne.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { destinataires: { some: { id: 'user-2' } } } }),
+        expect.objectContaining({
+          where: { destinataires: { some: { id: 'user-2' } } },
+          skip: 0,
+          take: 20,
+        }),
       );
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
     });
 
-    it('findEnvoyes filtre sur l’expéditeur', async () => {
-      await service.findEnvoyes('user-1');
+    it('findEnvoyes filtre sur l’expéditeur et pagine', async () => {
+      await service.findEnvoyes(PAGE_1, 'user-1');
       expect(prisma.messageInterne.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { expediteurId: 'user-1' } }),
+        expect.objectContaining({ where: { expediteurId: 'user-1' }, skip: 0, take: 20 }),
       );
     });
   });

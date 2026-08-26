@@ -82,11 +82,11 @@ describe('Intégration — InscriptionCoursSupportITService (isseg_test)', () =>
     await service.enroll(cours.id, userA.id);
     await service.enroll(cours.id, userB.id);
 
-    const vuParA = await service.findAll(toAuthUser(userA.id, ['ENSEIGNANT']));
-    expect(vuParA).toHaveLength(1);
+    const vuParA = await service.findAll({ page: 1, limit: 20 }, toAuthUser(userA.id, ['ENSEIGNANT']));
+    expect(vuParA.data).toHaveLength(1);
 
-    const vuParResponsable = await service.findAll(toAuthUser(userA.id, ['RESPONSABLE_IT']));
-    expect(vuParResponsable).toHaveLength(2);
+    const vuParResponsable = await service.findAll({ page: 1, limit: 20 }, toAuthUser(userA.id, ['RESPONSABLE_IT']));
+    expect(vuParResponsable.data).toHaveLength(2);
   });
 
   it('findOne : un tiers ne peut pas consulter l’inscription d’un autre', async () => {

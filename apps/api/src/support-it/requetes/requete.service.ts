@@ -8,9 +8,10 @@ import {
   buildRequeteScopeFilter,
 } from '../common/requete-access.helper';
 import { NATURE_SOUS_SERVICE_MAP } from '../common/nature-sous-service.mapping';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { CreateRequeteDto } from './dto/create-requete.dto';
 import { ListRequeteQueryDto } from './dto/list-requete-query.dto';
-import { RequeteResponseDto } from './dto/requete.response.dto';
+import { PaginatedRequeteResponseDto, RequeteResponseDto } from './dto/requete.response.dto';
 
 const REQUETE_SELECT = {
   id: true,
@@ -62,16 +63,27 @@ export class RequeteService {
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
-  async findAll(query: ListRequeteQueryDto, user: AuthenticatedUser): Promise<RequeteResponseDto[]> {
-    const where = await buildRequeteScopeFilter(this.prisma, user);
-    if (where === null) return [];
+  async findAll(query: ListRequeteQueryDto, user: AuthenticatedUser): Promise<PaginatedRequeteResponseDto> {
+    const scope = await buildRequeteScopeFilter(this.prisma, user);
+    const meta: PaginationMetaDto = { total: 0, page: query.page, limit: query.limit, totalPages: 1 };
+    if (scope === null) return { data: [], meta };
 
-    const rows = await this.prisma.requete.findMany({
-      where: { ...where, statut: query.statut },
-      select: REQUETE_SELECT,
-      orderBy: { dateOuverture: 'desc' },
-    });
-    return rows.map(this.toDto);
+    const where = { ...scope, statut: query.statut };
+    const [rows, total] = await Promise.all([
+      this.prisma.requete.findMany({
+        where,
+        select: REQUETE_SELECT,
+        orderBy: { dateOuverture: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.requete.count({ where }),
+    ]);
+
+    return {
+      data: rows.map(this.toDto),
+      meta: { total, page: query.page, limit: query.limit, totalPages: Math.max(1, Math.ceil(total / query.limit)) },
+    };
   }
 
   async findOne(id: string, user: AuthenticatedUser): Promise<RequeteResponseDto> {

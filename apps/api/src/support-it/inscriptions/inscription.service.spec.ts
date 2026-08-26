@@ -6,7 +6,13 @@ import { InscriptionCoursSupportITService } from './inscription.service';
 
 interface PrismaMock {
   coursSupportIT: { findUnique: jest.Mock };
-  inscriptionCoursSupportIT: { create: jest.Mock; findMany: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
+  inscriptionCoursSupportIT: {
+    create: jest.Mock;
+    findMany: jest.Mock;
+    count: jest.Mock;
+    findUnique: jest.Mock;
+    update: jest.Mock;
+  };
   evaluationSupportIT: { findUnique: jest.Mock; create: jest.Mock };
   $transaction: jest.Mock;
 }
@@ -48,6 +54,7 @@ describe('InscriptionCoursSupportITService', () => {
       inscriptionCoursSupportIT: {
         create: jest.fn().mockResolvedValue(INSCRIPTION_ROW),
         findMany: jest.fn().mockResolvedValue([INSCRIPTION_ROW]),
+        count: jest.fn().mockResolvedValue(1),
         findUnique: jest.fn().mockResolvedValue({
           ...INSCRIPTION_ROW,
           cours: { titre: 'Bureautique niveau 1' },
@@ -92,18 +99,29 @@ describe('InscriptionCoursSupportITService', () => {
   });
 
   describe('findAll', () => {
+    const PAGE_1 = { page: 1, limit: 20 };
+
     it('participant → filtre sur son propre id', async () => {
-      await service.findAll(makeUser());
+      await service.findAll(PAGE_1, makeUser());
       expect(prisma.inscriptionCoursSupportIT.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { participantId: 'user-1' } }),
       );
     });
 
     it('RESPONSABLE_IT → pas de filtre', async () => {
-      await service.findAll(makeUser({ roles: ['RESPONSABLE_IT'] }));
+      await service.findAll(PAGE_1, makeUser({ roles: ['RESPONSABLE_IT'] }));
       expect(prisma.inscriptionCoursSupportIT.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: {} }),
       );
+    });
+
+    it('pagine avec skip/take et renvoie meta', async () => {
+      prisma.inscriptionCoursSupportIT.count.mockResolvedValue(1);
+      const result = await service.findAll(PAGE_1, makeUser());
+      expect(prisma.inscriptionCoursSupportIT.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
     });
   });
 

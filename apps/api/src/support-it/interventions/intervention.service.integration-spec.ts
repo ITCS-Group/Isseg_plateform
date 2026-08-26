@@ -131,12 +131,13 @@ describe('Intégration — InterventionService (isseg_test)', () => {
 
     const vuParDemandeur = await interventionService.findAllForRequete(
       requete.id,
+      { page: 1, limit: 20 },
       toAuthUser(demandeur.id, ['ENSEIGNANT']),
     );
-    expect(vuParDemandeur).toHaveLength(1);
+    expect(vuParDemandeur.data).toHaveLength(1);
 
     await expect(
-      interventionService.findAllForRequete(requete.id, toAuthUser(tiers.id, ['ENSEIGNANT'])),
+      interventionService.findAllForRequete(requete.id, { page: 1, limit: 20 }, toAuthUser(tiers.id, ['ENSEIGNANT'])),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -144,7 +145,11 @@ describe('Intégration — InterventionService (isseg_test)', () => {
     const interventionService = new InterventionService(prisma as never);
     const { user } = await makePersonnel();
     await expect(
-      interventionService.findAllForRequete('00000000-0000-0000-0000-000000000000', toAuthUser(user.id, ['ENSEIGNANT'])),
+      interventionService.findAllForRequete(
+        '00000000-0000-0000-0000-000000000000',
+        { page: 1, limit: 20 },
+        toAuthUser(user.id, ['ENSEIGNANT']),
+      ),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateInterventionDto } from './dto/create-intervention.dto';
-import { InterventionResponseDto } from './dto/intervention.response.dto';
+import { InterventionResponseDto, PaginatedInterventionResponseDto } from './dto/intervention.response.dto';
+import { ListInterventionQueryDto } from './dto/list-intervention-query.dto';
 import { InterventionService } from './intervention.service';
 
 @ApiTags('Support IT — Interventions')
@@ -42,13 +43,14 @@ export class InterventionController {
   @Get()
   @ApiOperation({ summary: 'Lister les interventions d’une requête' })
   @ApiParam({ name: 'requeteId', format: 'uuid' })
-  @ApiResponse({ status: 200, type: [InterventionResponseDto] })
+  @ApiResponse({ status: 200, type: PaginatedInterventionResponseDto })
   @ApiResponse({ status: 403, description: 'Requête hors du périmètre de l’appelant' })
   @ApiResponse({ status: 404, description: 'Requête introuvable' })
   findAllForRequete(
     @Param('requeteId', ParseUUIDPipe) requeteId: string,
+    @Query() query: ListInterventionQueryDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<InterventionResponseDto[]> {
-    return this.interventionService.findAllForRequete(requeteId, user);
+  ): Promise<PaginatedInterventionResponseDto> {
+    return this.interventionService.findAllForRequete(requeteId, query, user);
   }
 }

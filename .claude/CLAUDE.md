@@ -160,6 +160,34 @@ docker-compose logs -f api
   destiné à être lu par des humains (documentation, commits, PR), pas les
   identifiants de code.
 
+## Contraintes réseau
+
+La plateforme doit rester utilisable dans des conditions de connexion réseau
+dégradées ou instables, réalité courante en Guinée. Ces règles s'appliquent
+**systématiquement**, pas seulement quand ça semble nécessaire :
+
+- **Timeouts explicites et raisonnables sur tous les appels HTTP sortants**
+  (inter-services, ex. `apps/worker` → `services/moodle-service`) — jamais
+  d'attente indéfinie qui bloquerait une requête utilisateur.
+- **Retry avec backoff sur les appels réseau non critiques en écriture**
+  (ex. synchronisation Moodle), **jamais** sur les opérations qui doivent
+  rester strictement une fois (paiements, validations de notes).
+- **Pagination systématique sur tout endpoint de liste** — jamais de
+  réponse qui charge un jeu de données complet d'un coup. Déjà en place
+  sur `/utilisateurs`, `/dossiers-inscription` ; à respecter partout
+  ailleurs (`PaginationDto`/`PaginationMetaDto` dans
+  `src/common/dto/pagination.dto.ts`).
+- **Réponses API aussi légères que possible** : ne renvoyer que les champs
+  réellement utiles à l'écran qui consomme l'endpoint, éviter de
+  sur-inclure des relations Prisma non nécessaires.
+- **Côté frontend : états de chargement et d'erreur explicites sur chaque
+  appel réseau** (déjà pratiqué sur `StatCard` avec
+  ready/loading/error/coming-soon) — jamais d'écran figé sans retour
+  visuel en cas de lenteur ou d'échec.
+- **Éviter les dépendances à une connexion permanente quand une
+  alternative asynchrone existe** (ex. la queue BullMQ déjà en place pour
+  Moodle, plutôt qu'un appel synchrone bloquant).
+
 ## RBAC (contrôle d'accès basé sur les rôles)
 
 La plateforme implémente un RBAC fin avec les rôles principaux suivants :

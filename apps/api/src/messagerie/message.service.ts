@@ -1,8 +1,10 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { PaginationMetaDto } from '../common/dto/pagination.dto';
 import { PrismaService } from '../database/prisma/prisma.service';
 import { CreateMessageDto } from './dto/create-message.dto';
-import { MessageResponseDto } from './dto/message.response.dto';
+import { ListMessageQueryDto } from './dto/list-message-query.dto';
+import { MessageResponseDto, PaginatedMessageResponseDto } from './dto/message.response.dto';
 
 const MESSAGE_SELECT = {
   id: true,
@@ -43,22 +45,36 @@ export class MessageService {
     return this.toDto(created);
   }
 
-  async findRecus(utilisateurId: string): Promise<MessageResponseDto[]> {
-    const rows = await this.prisma.messageInterne.findMany({
-      where: { destinataires: { some: { id: utilisateurId } } },
-      select: MESSAGE_SELECT,
-      orderBy: { date: 'desc' },
-    });
-    return rows.map(this.toDto);
+  findRecus(query: ListMessageQueryDto, utilisateurId: string): Promise<PaginatedMessageResponseDto> {
+    return this.findPaginated(query, { destinataires: { some: { id: utilisateurId } } });
   }
 
-  async findEnvoyes(utilisateurId: string): Promise<MessageResponseDto[]> {
-    const rows = await this.prisma.messageInterne.findMany({
-      where: { expediteurId: utilisateurId },
-      select: MESSAGE_SELECT,
-      orderBy: { date: 'desc' },
-    });
-    return rows.map(this.toDto);
+  findEnvoyes(query: ListMessageQueryDto, utilisateurId: string): Promise<PaginatedMessageResponseDto> {
+    return this.findPaginated(query, { expediteurId: utilisateurId });
+  }
+
+  private async findPaginated(
+    query: ListMessageQueryDto,
+    where: Prisma.MessageInterneWhereInput,
+  ): Promise<PaginatedMessageResponseDto> {
+    const [rows, total] = await Promise.all([
+      this.prisma.messageInterne.findMany({
+        where,
+        select: MESSAGE_SELECT,
+        orderBy: { date: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.messageInterne.count({ where }),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data: rows.map(this.toDto), meta };
   }
 
   async findOne(id: string, utilisateurId: string): Promise<MessageResponseDto> {

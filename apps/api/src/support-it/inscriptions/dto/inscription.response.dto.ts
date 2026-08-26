@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { StatutInscriptionCoursSupportIT } from '@prisma/client';
+import { PaginationMetaDto } from '../../../common/dto/pagination.dto';
 
 export class InscriptionCoursSupportITResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -25,4 +26,12 @@ export class InscriptionCoursSupportITResponseDto {
 
   @ApiProperty()
   updatedAt: Date;
+}
+
+export class PaginatedInscriptionCoursSupportITResponseDto {
+  @ApiProperty({ type: [InscriptionCoursSupportITResponseDto] })
+  data: InscriptionCoursSupportITResponseDto[];
+
+  @ApiProperty({ type: PaginationMetaDto })
+  meta: PaginationMetaDto;
 }

@@ -1,7 +1,9 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
-import { CoursSupportITResponseDto } from './dto/cours.response.dto';
+import { CoursSupportITResponseDto, PaginatedCoursSupportITResponseDto } from './dto/cours.response.dto';
 import { CreateCoursSupportITDto } from './dto/create-cours.dto';
+import { ListCoursSupportITQueryDto } from './dto/list-cours-query.dto';
 
 @Injectable()
 export class CoursSupportITService {
@@ -15,8 +17,23 @@ export class CoursSupportITService {
     return created;
   }
 
-  findAll(): Promise<CoursSupportITResponseDto[]> {
-    return this.prisma.coursSupportIT.findMany({ orderBy: { titre: 'asc' } });
+  async findAll(query: ListCoursSupportITQueryDto): Promise<PaginatedCoursSupportITResponseDto> {
+    const [data, total] = await Promise.all([
+      this.prisma.coursSupportIT.findMany({
+        orderBy: { titre: 'asc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.coursSupportIT.count(),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data, meta };
   }
 
   async findOne(id: string): Promise<CoursSupportITResponseDto> {

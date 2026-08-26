@@ -5,7 +5,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateRequeteDto } from './dto/create-requete.dto';
 import { ListRequeteQueryDto } from './dto/list-requete-query.dto';
-import { RequeteResponseDto } from './dto/requete.response.dto';
+import { PaginatedRequeteResponseDto, RequeteResponseDto } from './dto/requete.response.dto';
 import { RequeteService } from './requete.service';
 
 @ApiTags('Support IT — Requêtes')
@@ -43,11 +43,11 @@ export class RequeteController {
       'Un demandeur ne voit que ses propres requêtes. Un TECHNICIEN ne voit que celles de son ' +
       'propre sous-service. RESPONSABLE_IT/ADMIN voient tout.',
   })
-  @ApiResponse({ status: 200, type: [RequeteResponseDto] })
+  @ApiResponse({ status: 200, type: PaginatedRequeteResponseDto })
   findAll(
     @Query() query: ListRequeteQueryDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<RequeteResponseDto[]> {
+  ): Promise<PaginatedRequeteResponseDto> {
     return this.requeteService.findAll(query, user);
   }
 

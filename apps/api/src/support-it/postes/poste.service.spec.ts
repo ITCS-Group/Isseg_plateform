@@ -3,7 +3,14 @@ import { StatutPoste } from '@prisma/client';
 import { PosteService } from './poste.service';
 
 interface PrismaMock {
-  poste: { create: jest.Mock; findMany: jest.Mock; findUnique: jest.Mock; update: jest.Mock; groupBy: jest.Mock };
+  poste: {
+    create: jest.Mock;
+    findMany: jest.Mock;
+    count: jest.Mock;
+    findUnique: jest.Mock;
+    update: jest.Mock;
+    groupBy: jest.Mock;
+  };
 }
 
 const POSTE = {
@@ -24,6 +31,7 @@ describe('PosteService', () => {
       poste: {
         create: jest.fn().mockResolvedValue(POSTE),
         findMany: jest.fn().mockResolvedValue([POSTE]),
+        count: jest.fn().mockResolvedValue(1),
         findUnique: jest.fn().mockResolvedValue(POSTE),
         update: jest.fn().mockResolvedValue({ ...POSTE, statut: StatutPoste.HORS_SERVICE }),
         groupBy: jest.fn().mockResolvedValue([
@@ -39,6 +47,15 @@ describe('PosteService', () => {
   it('create : crée le poste', async () => {
     const result = await service.create({ salle: 'Salle A' });
     expect(result.id).toBe('poste-1');
+  });
+
+  it('findAll : pagine avec skip/take et renvoie meta', async () => {
+    prisma.poste.count.mockResolvedValue(42);
+    const result = await service.findAll({ page: 2, limit: 10 });
+    expect(prisma.poste.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 10, take: 10 }),
+    );
+    expect(result.meta).toEqual({ total: 42, page: 2, limit: 10, totalPages: 5 });
   });
 
   it('findOne : introuvable → NotFoundException', async () => {

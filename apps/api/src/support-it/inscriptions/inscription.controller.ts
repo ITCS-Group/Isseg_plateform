@@ -1,11 +1,15 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateEvaluationSupportITDto } from './dto/create-evaluation.dto';
 import { EvaluationSupportITResponseDto } from './dto/evaluation.response.dto';
-import { InscriptionCoursSupportITResponseDto } from './dto/inscription.response.dto';
+import {
+  InscriptionCoursSupportITResponseDto,
+  PaginatedInscriptionCoursSupportITResponseDto,
+} from './dto/inscription.response.dto';
+import { ListInscriptionQueryDto } from './dto/list-inscription-query.dto';
 import { InscriptionCoursSupportITService } from './inscription.service';
 
 @ApiTags('Support IT — Inscriptions')
@@ -19,9 +23,12 @@ export class InscriptionController {
     summary: 'Lister les inscriptions',
     description: 'Un participant ne voit que ses propres inscriptions. RESPONSABLE_IT/ADMIN voient tout.',
   })
-  @ApiResponse({ status: 200, type: [InscriptionCoursSupportITResponseDto] })
-  findAll(@CurrentUser() user: AuthenticatedUser): Promise<InscriptionCoursSupportITResponseDto[]> {
-    return this.inscriptionService.findAll(user);
+  @ApiResponse({ status: 200, type: PaginatedInscriptionCoursSupportITResponseDto })
+  findAll(
+    @Query() query: ListInscriptionQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PaginatedInscriptionCoursSupportITResponseDto> {
+    return this.inscriptionService.findAll(query, user);
   }
 
   @Get(':id')

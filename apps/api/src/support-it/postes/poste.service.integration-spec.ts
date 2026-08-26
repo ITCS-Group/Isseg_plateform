@@ -26,8 +26,9 @@ describe('Intégration — PosteService (isseg_test)', () => {
     const found = await service.findOne(created.id);
     expect(found.salle).toBe('Salle A');
 
-    const all = await service.findAll({});
-    expect(all).toHaveLength(1);
+    const all = await service.findAll({ page: 1, limit: 20 });
+    expect(all.data).toHaveLength(1);
+    expect(all.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
   });
 
   it('findOne : introuvable → NotFoundException', async () => {

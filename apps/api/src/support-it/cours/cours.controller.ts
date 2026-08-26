@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CoursSupportITService } from './cours.service';
-import { CoursSupportITResponseDto } from './dto/cours.response.dto';
+import { CoursSupportITResponseDto, PaginatedCoursSupportITResponseDto } from './dto/cours.response.dto';
 import { CreateCoursSupportITDto } from './dto/create-cours.dto';
+import { ListCoursSupportITQueryDto } from './dto/list-cours-query.dto';
 
 @ApiTags('Support IT — Cours')
 @ApiBearerAuth('JWT')
@@ -22,9 +23,9 @@ export class CoursSupportITController {
 
   @Get()
   @ApiOperation({ summary: 'Lister les cours Support IT' })
-  @ApiResponse({ status: 200, type: [CoursSupportITResponseDto] })
-  findAll(): Promise<CoursSupportITResponseDto[]> {
-    return this.coursService.findAll();
+  @ApiResponse({ status: 200, type: PaginatedCoursSupportITResponseDto })
+  findAll(@Query() query: ListCoursSupportITQueryDto): Promise<PaginatedCoursSupportITResponseDto> {
+    return this.coursService.findAll(query);
   }
 
   @Get(':id')
