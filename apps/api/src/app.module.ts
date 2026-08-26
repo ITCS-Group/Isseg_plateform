@@ -10,10 +10,12 @@ import { BibliothequeModule } from './bibliotheque/bibliotheque.module';
 import configuration from './config/configuration';
 import { PrismaModule } from './database/prisma/prisma.module';
 import { IdentityModule } from './identity/identity.module';
+import { MessageModule } from './messagerie/message.module';
 import { PedagogieModule } from './pedagogie/pedagogie.module';
 import { AbandonModule } from './scolarite/abandon/abandon.module';
 import { RegularityModule } from './scolarite/regularity/regularity.module';
 import { RegistrationModule } from './scolarite/registration/registration.module';
+import { SupportItModule } from './support-it/support-it.module';
 
 @Module({
   imports: [
@@ -50,6 +52,12 @@ import { RegistrationModule } from './scolarite/registration/registration.module
 
     // ── Domaine : Bibliothèque ───────────────────────────────────────────────
     BibliothequeModule,
+
+    // ── Domaine : Support Informatique ──────────────────────────────────────
+    SupportItModule,
+
+    // ── Transverse : Messagerie interne ──────────────────────────────────────
+    MessageModule,
   ],
   controllers: [],
   providers: [

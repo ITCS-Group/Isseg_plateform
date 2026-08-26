@@ -12,7 +12,7 @@ const TEST_PASSWORD = 'ChangeMe123!';
 // présents dans le code (registration.controller.ts, cours-classe/epreuve/
 // note-etudiant.controller.ts). Ne pas en ajouter d'autres ici sans un
 // usage correspondant vérifié dans le code — cf. audit RBAC de session.
-const TEST_ROLES = [
+export const TEST_ROLES = [
   { nomRole: 'SCOLARITE', nom: 'Scolarité', prenom: 'Test' },
   { nomRole: 'ENSEIGNANT', nom: 'Enseignant', prenom: 'Test' },
   { nomRole: 'CHEF_DEPARTEMENT', nom: 'Chef Département', prenom: 'Test' },
@@ -28,6 +28,14 @@ const TEST_ROLES = [
   { nomRole: 'RESPONSABLE_NUMERISATION', nom: 'Responsable Numérisation', prenom: 'Test' },
   { nomRole: 'RESPONSABLE_BIBLIOTHEQUE', nom: 'Responsable Bibliothèque', prenom: 'Test' },
   { nomRole: 'ETUDIANT', nom: 'Étudiant', prenom: 'Test' },
+  // Support Informatique (chantier feat/support-it-module) : RESPONSABLE_IT
+  // sort d'AUTH_ONLY_ROLES (chef de service, supervise tous les
+  // sous-services — routes Requêtes/Interventions/Cours/Postes/Messagerie/
+  // synthèse). TECHNICIEN est un rôle nouveau, distinct de RESPONSABLE_IT :
+  // ne traite que les requêtes de son propre sous-service (cf. Technicien.
+  // sousService dans le schéma Prisma).
+  { nomRole: 'RESPONSABLE_IT', nom: 'Responsable IT', prenom: 'Test' },
+  { nomRole: 'TECHNICIEN', nom: 'Technicien', prenom: 'Test' },
 ];
 
 // Permissions minimales, alignées sur les @Roles() déjà en place :
@@ -50,18 +58,17 @@ const TEST_ROLES = [
 // distinction n'existe nulle part dans le code entre les deux ; à
 // différencier plus tard si un besoin métier concret apparaît, décision
 // prise avec l'utilisateur, pas supposée.
-const AUTH_ONLY_ROLES = [
+export const AUTH_ONLY_ROLES = [
   { nomRole: 'SUPER_ADMIN', nom: 'Super Admin', prenom: 'Test' },
   { nomRole: 'COMPTABLE', nom: 'Comptable', prenom: 'Test' },
   { nomRole: 'RH', nom: 'RH', prenom: 'Test' },
   { nomRole: 'DIRECTEUR_GENERAL', nom: 'Directeur Général', prenom: 'Test' },
   { nomRole: 'DIRECTEUR_INNOVATION', nom: 'Directeur Innovation', prenom: 'Test' },
   { nomRole: 'RESPONSABLE_PUBLICATIONS', nom: 'Responsable Publications', prenom: 'Test' },
-  { nomRole: 'RESPONSABLE_IT', nom: 'Responsable IT', prenom: 'Test' },
   { nomRole: 'PARENT', nom: 'Parent', prenom: 'Test' },
 ];
 
-const TEST_PERMISSIONS: Array<{
+export const TEST_PERMISSIONS: Array<{
   nomPermission: string;
   description: string;
   roles: string[];
@@ -96,6 +103,18 @@ const TEST_PERMISSIONS: Array<{
     nomPermission: 'READ_BIBLIOTHEQUE',
     description: 'Consulter le catalogue, emprunter et réserver des ouvrages',
     roles: ['ETUDIANT', 'ENSEIGNANT'],
+  },
+  {
+    nomPermission: 'MANAGE_SUPPORT_IT',
+    description:
+      'Superviser tous les sous-services Support Informatique (requêtes, cours, postes, messagerie, synthèse mensuelle)',
+    roles: ['RESPONSABLE_IT'],
+  },
+  {
+    nomPermission: 'TRAITER_REQUETES_SUPPORT_IT',
+    description:
+      "Traiter les requêtes et interventions du sous-service auquel le technicien est affecté (Technicien.sousService)",
+    roles: ['TECHNICIEN'],
   },
 ];
 
@@ -281,7 +300,7 @@ async function main() {
     { timeout: 20_000 },
   );
 
-  // ── Rôles "auth-only" (11) — sans module métier, sans permission ────────
+  // ── Rôles "auth-only" (7) — sans module métier, sans permission ────────
   // Pas de $transaction ici : chaque étape est indépendamment idempotente
   // (upsert / find-then-create), pas besoin d'atomicité entre 11 rôles
   // indépendants, et ça évite le risque de timeout déjà rencontré sur Neon
@@ -532,11 +551,17 @@ async function main() {
   console.log('🎉 Seed completed successfully!');
 }
 
-main()
-  .catch((e) => {
-    console.error('❌ Seed failed:', e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+// Garde d'exécution : ne lance le seed que si ce fichier est exécuté
+// directement (`pnpm seed`) — évite de déclencher main() (qui exige
+// ADMIN_EMAIL/ADMIN_PASSWORD et écrit en base) quand seed.spec.ts importe
+// TEST_ROLES/AUTH_ONLY_ROLES/TEST_PERMISSIONS pour un test unitaire pur.
+if (require.main === module) {
+  main()
+    .catch((e) => {
+      console.error('❌ Seed failed:', e);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}

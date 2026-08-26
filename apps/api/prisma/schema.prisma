@@ -97,6 +97,10 @@ model Utilisateur {
 
   emprunts Emprunt[]
   abonne   Abonne?
+
+  inscriptionsCoursSupportIT InscriptionCoursSupportIT[]
+  messagesEnvoyes           MessageInterne[]            @relation("MessageExpediteur")
+  messagesRecus             MessageInterne[]            @relation("MessageDestinataires")
 }
 
 model Role {
@@ -198,6 +202,9 @@ model Personnel {
 
   enseignant  Enseignant?
   responsable ResponsablePedagogique?
+  technicien  Technicien?
+
+  requetesDemandees Requete[]
 }
 
 model Departement {
@@ -594,7 +601,6 @@ model Parent {
 
   etudiantsCharge  Etudiant[]    @relation("ParentEtudiant")
   carnetsConsultes CarnetSuivi[] @relation("ParentCarnet")
-  messages         Message[]
 }
 
 model CarnetSuivi {
@@ -612,17 +618,11 @@ model CarnetSuivi {
   parentsSpectateurs Parent[] @relation("ParentCarnet")
 }
 
-model Message {
-  id       String @id @default(uuid())
-  parentId String
-  objet    String
-  contenu  String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  parent Parent @relation(fields: [parentId], references: [id])
-}
+// Message (Parent) supprimé — modèle mort, jamais branché à aucun
+// controller/service (Portail Parent lui-même non implémenté), 0 ligne
+// en base sur isseg (vérifié avant suppression). Remplacé par
+// MessageInterne (voir section MESSAGERIE ci-dessous), généralisé pour
+// servir Support IT et tout usage futur (Portail Parent inclus).
 
 // ----------------------------------------------------
 // 7. WORKFLOW & EVENTS
@@ -812,4 +812,178 @@ model Reservation {
 
   @@index([ouvrageId])
   @@index([abonneId])
+}
+
+// ----------------------------------------------------
+// 9. SUPPORT INFORMATIQUE
+// ----------------------------------------------------
+
+enum SousServiceIT {
+  CENTRE_INFORMATIQUE
+  CYBER
+  MAINTENANCE
+}
+
+// Mapping nature -> sous-service dérivé automatiquement à la création
+// d'une Requete (voir RequeteService) : PANNE_MATERIEL/RESEAU -> MAINTENANCE,
+// INCIDENT_SECURITE -> CYBER, ACCES_COMPTE/INSTALLATION_LOGICIEL/AUTRE ->
+// CENTRE_INFORMATIQUE. Première proposition de routage, ajustable sans
+// migration (logique applicative, pas figée en base).
+enum NatureRequete {
+  PANNE_MATERIEL
+  ACCES_COMPTE
+  INSTALLATION_LOGICIEL
+  INCIDENT_SECURITE
+  RESEAU
+  AUTRE
+}
+
+enum StatutRequete {
+  OUVERTE
+  EN_COURS
+  CLOTUREE
+}
+
+enum StatutInscriptionCoursSupportIT {
+  EN_COURS
+  TERMINE
+  ABANDONNE
+}
+
+enum StatutPoste {
+  DISPONIBLE
+  HORS_SERVICE
+}
+
+model Requete {
+  id               String        @id @default(uuid())
+  demandeurId      String
+  nature           NatureRequete
+  sousServiceCible SousServiceIT
+  description      String
+  statut           StatutRequete @default(OUVERTE)
+  dateOuverture    DateTime      @default(now())
+  dateCloture      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  demandeur     Personnel      @relation(fields: [demandeurId], references: [id])
+  interventions Intervention[]
+
+  @@index([demandeurId])
+  @@index([sousServiceCible])
+}
+
+model Intervention {
+  id           String   @id @default(uuid())
+  requeteId    String
+  technicienId String
+  date         DateTime @default(now())
+  compteRendu  String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requete    Requete    @relation(fields: [requeteId], references: [id])
+  technicien Technicien @relation(fields: [technicienId], references: [id])
+
+  @@index([requeteId])
+  @@index([technicienId])
+}
+
+// Spécialisation de Personnel, même pattern que Enseignant/ResponsablePedagogique.
+// RESPONSABLE_IT (chef du service, supervise tous les sous-services) reste un
+// rôle RBAC pur sans sous-modèle dédié, comme DGA_ETUDES.
+model Technicien {
+  id          String        @id @default(uuid())
+  personnelId String        @unique
+  sousService SousServiceIT
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  personnel     Personnel      @relation(fields: [personnelId], references: [id])
+  interventions Intervention[]
+}
+
+model CoursSupportIT {
+  id      String @id @default(uuid())
+  titre   String
+  contenu String
+  niveau  String
+  duree   Int // minutes
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  inscriptions InscriptionCoursSupportIT[]
+}
+
+model InscriptionCoursSupportIT {
+  id            String                          @id @default(uuid())
+  participantId String
+  coursId       String
+  statut        StatutInscriptionCoursSupportIT @default(EN_COURS)
+  progression   Int                             @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participant Utilisateur          @relation(fields: [participantId], references: [id])
+  cours       CoursSupportIT       @relation(fields: [coursId], references: [id])
+  evaluation  EvaluationSupportIT?
+
+  @@unique([participantId, coursId])
+}
+
+// Liée à InscriptionCoursSupportIT (pas directement participant+cours) —
+// même convention que NoteEtudiant.inscriptionId, évite un état invalide
+// (évaluation d'un participant jamais inscrit). Note saisie manuellement
+// par RESPONSABLE_IT, aucun moteur de quiz/auto-calcul.
+model EvaluationSupportIT {
+  id             String   @id @default(uuid())
+  inscriptionId  String   @unique
+  note           Decimal
+  date           DateTime @default(now())
+  statutReussite Boolean
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  inscription InscriptionCoursSupportIT @relation(fields: [inscriptionId], references: [id])
+}
+
+model Poste {
+  id                      String      @id @default(uuid())
+  salle                   String
+  statut                  StatutPoste @default(DISPONIBLE)
+  dateDerniereMaintenance DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([salle])
+}
+
+// ----------------------------------------------------
+// 10. MESSAGERIE (composant transverse)
+// ----------------------------------------------------
+
+// Généralisé dès sa création : sert Support IT et remplace l'ancien
+// Message (Parent), mort et jamais branché (voir section 6). Pas la
+// propriété de Support IT — vit dans apps/api/src/messagerie/.
+model MessageInterne {
+  id           String   @id @default(uuid())
+  expediteurId String
+  contenu      String
+  date         DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  expediteur    Utilisateur   @relation("MessageExpediteur", fields: [expediteurId], references: [id])
+  destinataires Utilisateur[] @relation("MessageDestinataires")
+
+  @@index([expediteurId])
 }
