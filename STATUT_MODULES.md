@@ -57,10 +57,9 @@ d'Innovation Pédagogique fournira un second cas d'usage réel — ne pas
 anticiper cette forme finale avant.
 
 **Migration Prisma du module Support IT** : appliquée sur `isseg_test`
-uniquement à ce stade (25/08). **Pas encore appliquée sur `isseg`
-(dev)** — attend le feu vert explicite de l'utilisateur, comme pour tous
-les chantiers précédents. Supprime aussi l'ancien modèle `Message`
-(Parent), mort et jamais branché (0 ligne en base, vérifié avant
+(25/08) puis sur `isseg` (dev, 26/08) après feu vert explicite de
+l'utilisateur. Supprime aussi l'ancien modèle `Message` (Parent), mort
+et jamais branché (0 ligne en base sur les deux bases, vérifié avant
 suppression), remplacé par `MessageInterne` — module transverse
 (`apps/api/src/messagerie/`), hors périmètre Support IT, ouvert à tout
 compte authentifié.
