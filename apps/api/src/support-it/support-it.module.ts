@@ -5,6 +5,7 @@ import { InscriptionCoursSupportITModule } from './inscriptions/inscription.modu
 import { InterventionModule } from './interventions/intervention.module';
 import { PosteModule } from './postes/poste.module';
 import { RequeteModule } from './requetes/requete.module';
+import { StatsModule } from './stats/stats.module';
 
 /**
  * Module barrel regroupant tous les sous-modules du domaine Support
@@ -20,7 +21,15 @@ import { RequeteModule } from './requetes/requete.module';
     InscriptionCoursSupportITModule,
     AttestationModule,
     PosteModule,
+    StatsModule,
   ],
-  exports: [RequeteModule, InterventionModule, CoursSupportITModule, InscriptionCoursSupportITModule, PosteModule],
+  exports: [
+    RequeteModule,
+    InterventionModule,
+    CoursSupportITModule,
+    InscriptionCoursSupportITModule,
+    PosteModule,
+    StatsModule,
+  ],
 })
 export class SupportItModule {}
