@@ -3,6 +3,7 @@ import { AttestationModule } from './attestations/attestation.module';
 import { CoursSupportITModule } from './cours/cours.module';
 import { InscriptionCoursSupportITModule } from './inscriptions/inscription.module';
 import { InterventionModule } from './interventions/intervention.module';
+import { PosteModule } from './postes/poste.module';
 import { RequeteModule } from './requetes/requete.module';
 
 /**
@@ -12,7 +13,14 @@ import { RequeteModule } from './requetes/requete.module';
  * src/messagerie/.)
  */
 @Module({
-  imports: [RequeteModule, InterventionModule, CoursSupportITModule, InscriptionCoursSupportITModule, AttestationModule],
-  exports: [RequeteModule, InterventionModule, CoursSupportITModule, InscriptionCoursSupportITModule],
+  imports: [
+    RequeteModule,
+    InterventionModule,
+    CoursSupportITModule,
+    InscriptionCoursSupportITModule,
+    AttestationModule,
+    PosteModule,
+  ],
+  exports: [RequeteModule, InterventionModule, CoursSupportITModule, InscriptionCoursSupportITModule, PosteModule],
 })
 export class SupportItModule {}
