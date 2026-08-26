@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { AttestationModule } from './attestations/attestation.module';
+import { CoursSupportITModule } from './cours/cours.module';
+import { InscriptionCoursSupportITModule } from './inscriptions/inscription.module';
 import { InterventionModule } from './interventions/intervention.module';
 import { RequeteModule } from './requetes/requete.module';
 
@@ -9,7 +12,7 @@ import { RequeteModule } from './requetes/requete.module';
  * src/messagerie/.)
  */
 @Module({
-  imports: [RequeteModule, InterventionModule],
-  exports: [RequeteModule, InterventionModule],
+  imports: [RequeteModule, InterventionModule, CoursSupportITModule, InscriptionCoursSupportITModule, AttestationModule],
+  exports: [RequeteModule, InterventionModule, CoursSupportITModule, InscriptionCoursSupportITModule],
 })
 export class SupportItModule {}
