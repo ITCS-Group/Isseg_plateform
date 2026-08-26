@@ -14,6 +14,7 @@ import { PedagogieModule } from './pedagogie/pedagogie.module';
 import { AbandonModule } from './scolarite/abandon/abandon.module';
 import { RegularityModule } from './scolarite/regularity/regularity.module';
 import { RegistrationModule } from './scolarite/registration/registration.module';
+import { SupportItModule } from './support-it/support-it.module';
 
 @Module({
   imports: [
@@ -50,6 +51,9 @@ import { RegistrationModule } from './scolarite/registration/registration.module
 
     // ── Domaine : Bibliothèque ───────────────────────────────────────────────
     BibliothequeModule,
+
+    // ── Domaine : Support Informatique ──────────────────────────────────────
+    SupportItModule,
   ],
   controllers: [],
   providers: [
