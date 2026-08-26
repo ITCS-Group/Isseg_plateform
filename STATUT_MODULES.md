@@ -25,7 +25,6 @@ attendu, pas un bug.
 | `DIRECTEUR_GENERAL` | `directeur_general@isseg.local` | Grand Conseil (validation finale des notes) | Non implémenté — dépend de l'arbitrage non tranché sur la propriété du workflow de validation à 5 étapes (cf. audits précédents) |
 | `DIRECTEUR_INNOVATION` | `directeur_innovation@isseg.local` | Innovation Numérique | Non implémenté (agent `agent-innovation-numerique.md` non committé, non arbitré) |
 | `RESPONSABLE_PUBLICATIONS` | `responsable_publications@isseg.local` | Innovation Numérique (Éditions) | Non implémenté |
-| `RESPONSABLE_IT` | `responsable_it@isseg.local` | Innovation Numérique (Support Informatique) | Non implémenté |
 | `PARENT` | `parent@isseg.local` | Portail Parent | Non implémenté |
 
 Mot de passe de tous les comptes ci-dessus : identique au reste des comptes de
@@ -44,6 +43,27 @@ test (`ChangeMe123!`, temporaire — cf. `apps/api/prisma/seed.ts`).
 | `RESPONSABLE_BIBLIOTHEQUE` | Bibliothèque (supervision — mêmes routes que BIBLIOTHECAIRE) | ✅ Backend livré (même chantier) — rôle distinct, pas fusionné dans `BIBLIOTHECAIRE`/`ADMIN` (décision explicite). Compte de test : `responsable_bibliotheque@isseg.local`. Aucun écran frontend. |
 | `RESPONSABLE_NUMERISATION` | Bibliothèque (documents académiques — thèses/mémoires) | ✅ Backend livré (même chantier) : `/documents-academiques` (CRUD, visibilité conditionnée à `diffusionAutorisee`/embargo). Aucun écran frontend. |
 | `ETUDIANT` | Bibliothèque (lecture catalogue, réservation) | ✅ Backend livré (même chantier) pour la partie Bibliothèque uniquement : `GET /ouvrages`, `GET /emprunts` (scopé à ses propres emprunts, actuellement toujours vide), `POST /reservations`, lecture `/documents-academiques` diffusés. **Ne peut plus emprunter à domicile depuis le 20/08** (restriction ENSEIGNANT-only, réactivable par configuration sans nouveau code). Le **Portail Étudiant** plus large (profil, notes, autres documents) reste non implémenté — aucun écran frontend dans les deux cas. |
+| `RESPONSABLE_IT` | Support Informatique (supervision — tous sous-services) | ✅ Backend livré (`feat/support-it-module`, 25-26/08) : `Requete`/`Intervention`/`Technicien`/`CoursSupportIT`/`InscriptionCoursSupportIT`/`EvaluationSupportIT`/`Poste`, endpoints `/requetes`(+`/cloturer`), `/requetes/:id/interventions`, `/cours-support-it`(+`/inscriptions`), `/inscriptions-support-it`(+`/evaluation`), `/postes`(+`/statut`, `/stats/disponibilite`), `/support-it/stats/synthese-mensuelle`. Sort d'auth-only à cette occasion. Aucun écran frontend. |
+| `TECHNICIEN` | Support Informatique (traitement des requêtes de son sous-service) | ✅ Backend livré (même chantier) — rôle nouveau, distinct de `RESPONSABLE_IT` (spécialisation de `Personnel`, `Technicien.sousService`). Compte de test : `technicien@isseg.local`. Aucun écran frontend. |
+
+**Attestation Support IT — forme provisoire** : `AttestationService`
+(`apps/api/src/support-it/attestations/`) génère un objet structuré (pas
+de PDF) avec un unique gabarit texte codé en dur, aucune signature,
+aucune numérotation officielle réelle — voir le commentaire de tête dans
+`attestation.types.ts`. Scopé à Support IT uniquement, volontairement pas
+un service de certification générique. À généraliser (multi-templates,
+signature, numérotation officielle) seulement quand le Centre
+d'Innovation Pédagogique fournira un second cas d'usage réel — ne pas
+anticiper cette forme finale avant.
+
+**Migration Prisma du module Support IT** : appliquée sur `isseg_test`
+uniquement à ce stade (25/08). **Pas encore appliquée sur `isseg`
+(dev)** — attend le feu vert explicite de l'utilisateur, comme pour tous
+les chantiers précédents. Supprime aussi l'ancien modèle `Message`
+(Parent), mort et jamais branché (0 ligne en base, vérifié avant
+suppression), remplacé par `MessageInterne` — module transverse
+(`apps/api/src/messagerie/`), hors périmètre Support IT, ouvert à tout
+compte authentifié.
 
 ## Backlog — endpoints manquants pour le Dashboard Admin (`/admin`)
 
@@ -60,9 +80,8 @@ n'existe — voir `apps/web/src/app/admin/page.tsx`.
 | StatCard "Taux de paiement" | Agrégat du taux de régularité financière sur l'ensemble des étudiants | Endpoint d'agrégation à créer, ex. `GET /scolarite/stats/paiements` | La donnée métier "régularité" existe déjà **par étudiant** (`GET /etudiants/:matricule/statut-regularite`), mais aucun rollup global n'existe — ne pas confondre avec un module Finance à créer de zéro, c'est un agrégat manquant sur une donnée qui existe déjà unitairement |
 | Graphique "Inscriptions/abandons par mois" | Agrégat mensuel des inscriptions et abandons | Endpoint d'agrégat temporel à créer, ex. `GET /dossiers-inscription/stats/mensuel` | Le concept "abandon" (dropout) n'est a priori pas modélisé dans le schéma Prisma actuel — à vérifier/statuer avant de créer l'endpoint |
 | Tableau "Inscriptions récentes" | Listing des dossiers d'inscription les plus récents | `GET /dossiers-inscription` (listing paginé) | Même cause racine que l'"Effectif total" — aucun GET de listing n'existe sur ce controller |
-| StatCard "Tickets IT ouverts" + Tableau "Tickets IT récents" | Module Support IT complet | Nouveau module (modèle de données + endpoints), ex. `apps/api/src/support-it/` | Contrairement aux lignes précédentes, il ne s'agit pas d'un agrégat manquant sur une donnée existante : aucun module Support IT n'existe (rôle `RESPONSABLE_IT` seedé sans route métier, cf. section ci-dessus) |
 
-**Déjà branché réellement** : StatCard "Prêts bibliothèque" ← `GET /bibliotheque/stats/dashboard` (`empruntsEnCours`/`empruntsEnRetard`).
+**Déjà branché réellement** : StatCard "Prêts bibliothèque" ← `GET /bibliotheque/stats/dashboard` (`empruntsEnCours`/`empruntsEnRetard`) ; StatCard "Tickets IT ouverts" + Tableau "Tickets IT récents" ← module Support IT désormais livré (`GET /requetes?statut=OUVERTE` pour le comptage/listing, `GET /support-it/stats/synthese-mensuelle` pour la ventilation par sous-service) — aucun écran frontend ne les consomme encore.
 
 ## Points techniques à surveiller
 
@@ -80,6 +99,11 @@ n'existe — voir `apps/web/src/app/admin/page.tsx`.
   base de test distante. Pas un chantier à ouvrir maintenant — deux pistes
   à trancher plus tard : augmenter le timeout de ce test spécifique, ou
   paralléliser les 10 créations (`Promise.all`) pour réduire le temps total.
+  Même symptôme reproduit le 26/08 sur
+  `stats.service.integration-spec.ts` (chantier `feat/support-it-module`,
+  ~12 allers-retours séquentiels) — corrigé cette fois en appliquant la
+  première piste (timeout de test étendu à 120s), succès confirmé en ~8s
+  au ré-essai.
 
 ## Notes opérationnelles
 
