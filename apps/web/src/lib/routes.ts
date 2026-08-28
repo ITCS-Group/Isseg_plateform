@@ -36,6 +36,7 @@ export const ROLE_DASHBOARD_ROUTES: Record<string, string> = {
   DIRECTEUR_INNOVATION: "/innovation",
   RESPONSABLE_PUBLICATIONS: "/publications",
   RESPONSABLE_IT: "/it",
+  TECHNICIEN: "/it",
   PARENT: "/parent",
 };
 
