@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Mail, Lock } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, AlertCircle } from "lucide-react";
 import { IssegLogo } from "@isseg/ui";
 import { login } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
@@ -58,18 +58,20 @@ export default function LoginPage() {
     >
       <div className="mb-8 flex flex-col items-center text-white">
         <IssegLogo />
-        <h1 className="mt-4 text-xl font-semibold">ISSEG</h1>
-        <p className="text-sm text-white/70">Institut Supérieur des Sciences de l&apos;Éducation de Guinée</p>
+        <h1 className="mt-4 text-2xl font-bold tracking-wide">ISSEG</h1>
+        <p className="mt-1 text-center text-sm text-white/60">
+          Institut Supérieur des Sciences de l&apos;Éducation de Guinée
+        </p>
       </div>
 
-      <div className="w-full max-w-sm rounded-xl bg-white p-8 shadow-xl">
-        <h2 className="text-lg font-semibold text-navy">Connexion</h2>
+      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
+        <h2 className="mb-1 text-xl font-semibold text-navy">Connexion</h2>
         <p className="mb-6 text-sm text-navy/60">Accédez à votre espace académique</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-navy">Adresse e-mail</label>
-            <div className="flex items-center gap-2 rounded-lg border border-navy/15 px-3 py-2 focus-within:border-gold">
+            <div className="flex items-center gap-2 rounded-xl border border-navy/15 px-3 py-3 transition-all focus-within:border-navy focus-within:ring-2 focus-within:ring-navy/30">
               <Mail size={16} className="text-navy/40" />
               <input
                 type="email"
@@ -84,7 +86,7 @@ export default function LoginPage() {
 
           <div>
             <label className="mb-1 block text-sm font-medium text-navy">Mot de passe</label>
-            <div className="flex items-center gap-2 rounded-lg border border-navy/15 px-3 py-2 focus-within:border-gold">
+            <div className="flex items-center gap-2 rounded-xl border border-navy/15 px-3 py-3 transition-all focus-within:border-navy focus-within:ring-2 focus-within:ring-navy/30">
               <Lock size={16} className="text-navy/40" />
               <input
                 type={showPassword ? "text" : "password"}
@@ -94,33 +96,40 @@ export default function LoginPage() {
                 placeholder="••••••••"
                 className="w-full text-sm outline-none"
               />
-              <button type="button" onClick={() => setShowPassword((s) => !s)} className="text-navy/40">
+              <button type="button" onClick={() => setShowPassword((s) => !s)} className="text-navy/40 hover:text-navy">
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>
 
-          <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center justify-between text-sm">
             <label className="flex items-center gap-2 text-navy/60">
               <input type="checkbox" className="accent-gold" />
               Se souvenir de moi
             </label>
-            <span className="text-navy/30">Mot de passe oublié ?</span>
+            <button type="button" className="font-medium text-navy transition-colors hover:text-gold">
+              Mot de passe oublié ?
+            </button>
           </div>
 
-          {error && <p className="rounded-lg bg-status-red/10 px-3 py-2 text-sm text-status-red">{error}</p>}
+          {error && (
+            <p className="flex items-center gap-1.5 text-sm text-status-red">
+              <AlertCircle size={14} />
+              {error}
+            </p>
+          )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-gold py-2.5 text-sm font-semibold text-navy transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="w-full rounded-xl bg-gold py-3 text-sm font-semibold text-navy transition-all hover:brightness-105 active:scale-[0.98] disabled:opacity-50"
           >
             {loading ? "Connexion…" : "Se connecter"}
           </button>
         </form>
       </div>
 
-      <p className="mt-8 text-xs text-white/40">© 2026 ISSEG · Conakry, République de Guinée</p>
+      <p className="mt-6 text-center text-xs text-white/40">© 2026 ISSEG · Conakry, République de Guinée</p>
     </div>
   );
 }
