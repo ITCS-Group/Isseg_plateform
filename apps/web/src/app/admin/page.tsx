@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Users, CreditCard, Library, LifeBuoy, TrendingUp } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
-import { StatCard } from "./_components/StatCard";
+import { StatCard } from "@isseg/ui";
 import { ComingSoonState } from "./_components/ComingSoonState";
 
 interface BibliothequeStats {
