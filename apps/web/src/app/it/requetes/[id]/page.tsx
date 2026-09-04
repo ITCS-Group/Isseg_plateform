@@ -322,7 +322,7 @@ export default function ItRequeteDetailPage({ params }: { params: { id: string }
               <button
                 type="button"
                 onClick={confirmCloturer}
-                className="rounded-lg bg-gold px-3 py-1 text-sm font-semibold text-navy transition-opacity hover:opacity-90"
+                className="rounded border border-navy/20 px-3 py-1 text-sm text-navy"
               >
                 Clôturer
               </button>
