@@ -117,16 +117,18 @@ export function IdentityManagement() {
   const [pendingToggle, setPendingToggle] = useState<string | null>(null);
   const [expandedRow, setExpandedRow] = useState<{ userId: string; mode: "password" | "roles" } | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [roleActionPending, setRoleActionPending] = useState<string | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createForm, setCreateForm] = useState({ nom: "", prenom: "", email: "", motDePasse: "" });
+  const [createConfirmPassword, setCreateConfirmPassword] = useState("");
   const [createError, setCreateError] = useState("");
   const [createSubmitting, setCreateSubmitting] = useState(false);
 
   const handleCreateUser = useCallback(async () => {
-    if (!accessToken) return;
+    if (!accessToken || createForm.motDePasse !== createConfirmPassword) return;
     setCreateSubmitting(true);
     setCreateError("");
     try {
@@ -136,6 +138,7 @@ export function IdentityManagement() {
         body: createForm,
       });
       setCreateForm({ nom: "", prenom: "", email: "", motDePasse: "" });
+      setCreateConfirmPassword("");
       setShowCreateForm(false);
       await fetchUtilisateurs();
     } catch (e) {
@@ -143,7 +146,7 @@ export function IdentityManagement() {
     } finally {
       setCreateSubmitting(false);
     }
-  }, [accessToken, createForm, fetchUtilisateurs]);
+  }, [accessToken, createForm, createConfirmPassword, fetchUtilisateurs]);
 
   const handleToggleActif = useCallback(
     async (u: UtilisateurItem) => {
@@ -168,7 +171,7 @@ export function IdentityManagement() {
 
   const handleSubmitPassword = useCallback(
     async (userId: string) => {
-      if (!accessToken || newPassword.length < 8) return;
+      if (!accessToken || newPassword.length < 8 || newPassword !== confirmNewPassword) return;
       setPasswordSubmitting(true);
       setActionError((prev) => ({ ...prev, [userId]: "" }));
       try {
@@ -178,6 +181,7 @@ export function IdentityManagement() {
           body: { nouveauMotDePasse: newPassword },
         });
         setNewPassword("");
+        setConfirmNewPassword("");
         setExpandedRow(null);
       } catch (e) {
         setActionError((prev) => ({ ...prev, [userId]: e instanceof ApiError ? e.message : "Erreur réseau" }));
@@ -185,11 +189,11 @@ export function IdentityManagement() {
         setPasswordSubmitting(false);
       }
     },
-    [accessToken, newPassword],
+    [accessToken, newPassword, confirmNewPassword],
   );
 
   const handleToggleRole = useCallback(
-    async (u: UtilisateurItem, role: RoleItem) => {
+    async (u: UtilisateurItem, role: { id: string }) => {
       if (!accessToken) return;
       const hasRole = u.roles.some((r) => r.id === role.id);
       setRoleActionPending(role.id);
@@ -250,6 +254,7 @@ export function IdentityManagement() {
               <div className="mb-4 flex items-center gap-3">
                 <input
                   type="text"
+                  autoComplete="off"
                   placeholder="Rechercher un utilisateur…"
                   value={search}
                   onChange={(e) => {
@@ -299,7 +304,17 @@ export function IdentityManagement() {
                       onChange={(e) => setCreateForm((f) => ({ ...f, motDePasse: e.target.value }))}
                       className="rounded border border-navy/20 px-3 py-2 text-sm"
                     />
+                    <input
+                      type="password"
+                      placeholder="Confirmer le mot de passe"
+                      value={createConfirmPassword}
+                      onChange={(e) => setCreateConfirmPassword(e.target.value)}
+                      className="rounded border border-navy/20 px-3 py-2 text-sm"
+                    />
                   </div>
+                  {createConfirmPassword.length > 0 && createForm.motDePasse !== createConfirmPassword && (
+                    <p className="mt-2 text-xs text-status-red">Les mots de passe ne correspondent pas.</p>
+                  )}
                   {createError && <p className="mt-2 text-xs text-status-red">{createError}</p>}
                   <div className="mt-3 flex gap-2">
                     <button
@@ -310,7 +325,8 @@ export function IdentityManagement() {
                         !createForm.nom ||
                         !createForm.prenom ||
                         !createForm.email ||
-                        createForm.motDePasse.length < 8
+                        createForm.motDePasse.length < 8 ||
+                        createForm.motDePasse !== createConfirmPassword
                       }
                       className="rounded bg-gold px-3 py-2 text-xs font-semibold text-navy disabled:opacity-40"
                     >
@@ -321,6 +337,7 @@ export function IdentityManagement() {
                       onClick={() => {
                         setShowCreateForm(false);
                         setCreateError("");
+                        setCreateConfirmPassword("");
                       }}
                       className="rounded border border-navy/20 px-3 py-2 text-xs text-navy"
                     >
@@ -447,7 +464,7 @@ export function IdentityManagement() {
                             {expandedRow?.userId === u.id && expandedRow.mode === "password" && (
                               <tr className="border-b border-navy/5 bg-page">
                                 <td colSpan={4} className="px-4 py-3">
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex flex-wrap items-center gap-2">
                                     <input
                                       type="password"
                                       placeholder="Nouveau mot de passe (min. 8, majuscule, minuscule, chiffre)"
@@ -455,10 +472,19 @@ export function IdentityManagement() {
                                       onChange={(e) => setNewPassword(e.target.value)}
                                       className="w-full max-w-sm rounded border border-navy/20 px-3 py-2 text-sm"
                                     />
+                                    <input
+                                      type="password"
+                                      placeholder="Confirmer le mot de passe"
+                                      value={confirmNewPassword}
+                                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                                      className="w-full max-w-sm rounded border border-navy/20 px-3 py-2 text-sm"
+                                    />
                                     <button
                                       type="button"
                                       onClick={() => handleSubmitPassword(u.id)}
-                                      disabled={passwordSubmitting || newPassword.length < 8}
+                                      disabled={
+                                        passwordSubmitting || newPassword.length < 8 || newPassword !== confirmNewPassword
+                                      }
                                       className="rounded bg-gold px-3 py-2 text-xs font-semibold text-navy disabled:opacity-40"
                                     >
                                       Confirmer
@@ -468,11 +494,17 @@ export function IdentityManagement() {
                                       onClick={() => {
                                         setExpandedRow(null);
                                         setNewPassword("");
+                                        setConfirmNewPassword("");
                                       }}
                                       className="rounded border border-navy/20 px-3 py-2 text-xs text-navy"
                                     >
                                       Annuler
                                     </button>
+                                    {confirmNewPassword.length > 0 && newPassword !== confirmNewPassword && (
+                                      <p className="w-full text-xs text-status-red">
+                                        Les mots de passe ne correspondent pas.
+                                      </p>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -480,23 +512,51 @@ export function IdentityManagement() {
                             {expandedRow?.userId === u.id && expandedRow.mode === "roles" && (
                               <tr className="border-b border-navy/5 bg-page">
                                 <td colSpan={4} className="px-4 py-3">
-                                  <div className="flex flex-wrap gap-2">
-                                    {roles?.map((role) => {
-                                      const active = u.roles.some((r) => r.id === role.id);
-                                      return (
-                                        <button
-                                          key={role.id}
-                                          type="button"
-                                          onClick={() => handleToggleRole(u, role)}
-                                          disabled={roleActionPending === role.id}
-                                          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
-                                            active ? "bg-gold/10 text-gold" : "bg-navy/5 text-navy/50 hover:bg-navy/10"
-                                          }`}
-                                        >
-                                          {role.nomRole}
-                                        </button>
-                                      );
-                                    })}
+                                  <div className="space-y-3">
+                                    <div>
+                                      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-navy/40">
+                                        Rôles attribués
+                                      </p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {u.roles.length === 0 && (
+                                          <span className="text-xs text-navy/40">Aucun rôle attribué</span>
+                                        )}
+                                        {u.roles.map((role) => (
+                                          <button
+                                            key={role.id}
+                                            type="button"
+                                            onClick={() => handleToggleRole(u, role)}
+                                            disabled={roleActionPending === role.id}
+                                            className="inline-flex items-center gap-1 rounded-full bg-gold/10 px-3 py-1 text-xs font-medium text-gold transition-colors hover:bg-gold/20 disabled:opacity-40"
+                                          >
+                                            {role.nomRole}
+                                            <span aria-hidden="true">×</span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                    {roles && roles.filter((role) => !u.roles.some((r) => r.id === role.id)).length > 0 && (
+                                      <div>
+                                        <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-navy/40">
+                                          Ajouter un rôle
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                          {roles
+                                            .filter((role) => !u.roles.some((r) => r.id === role.id))
+                                            .map((role) => (
+                                              <button
+                                                key={role.id}
+                                                type="button"
+                                                onClick={() => handleToggleRole(u, role)}
+                                                disabled={roleActionPending === role.id}
+                                                className="rounded-full bg-navy/5 px-3 py-1 text-xs font-medium text-navy/50 transition-colors hover:bg-navy/10 disabled:opacity-40"
+                                              >
+                                                {role.nomRole}
+                                              </button>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
