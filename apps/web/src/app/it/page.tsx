@@ -11,7 +11,7 @@ import type {
   RequeteResponseDto,
   SyntheseMensuelleResponseDto,
 } from "@/lib/types/support-it";
-import { StatCard } from "./_components/StatCard";
+import { StatCard } from "@isseg/ui";
 
 type FetchStatus = "loading" | "ready" | "error";
 
