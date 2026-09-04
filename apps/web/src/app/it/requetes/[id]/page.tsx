@@ -5,6 +5,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 import { usePaginatedFetch } from "@/lib/usePaginatedFetch";
 import { hasCapability } from "@/lib/support-it-permissions";
+import { BackLink } from "../../_components/BackLink";
 import type {
   InterventionResponseDto,
   NatureRequete,
@@ -140,7 +141,9 @@ export default function ItRequeteDetailPage({ params }: { params: { id: string }
 
   return (
     <div className="p-6">
-      <h1 className="text-xl font-semibold text-navy">Détail de la requête</h1>
+      <BackLink href="/it/requetes" label="Retour aux requêtes" />
+
+      <h1 className="mt-2 text-xl font-semibold text-navy">Détail de la requête</h1>
 
       {status === "loading" && <p className="mt-4 text-sm text-navy/50">Chargement…</p>}
       {status === "error" && <p className="mt-4 text-sm text-status-red">{error}</p>}
