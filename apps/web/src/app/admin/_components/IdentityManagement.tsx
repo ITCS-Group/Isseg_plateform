@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
+import { Power, KeyRound, Shield } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 
@@ -68,7 +69,7 @@ export function IdentityManagement() {
   const fetchUtilisateurs = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const params = new URLSearchParams({ page: String(page), limit: "20" });
+      const params = new URLSearchParams({ page: String(page), limit: "10" });
       if (search) params.set("nom", search);
       const data = await apiFetch<PaginatedUtilisateurs>(`/utilisateurs?${params.toString()}`, {
         token: accessToken,
@@ -111,6 +112,77 @@ export function IdentityManagement() {
       fetchPermissions();
     }
   }, [accessToken, fetchRoles, fetchPermissions]);
+
+  const [actionError, setActionError] = useState<Record<string, string>>({});
+  const [pendingToggle, setPendingToggle] = useState<string | null>(null);
+  const [expandedRow, setExpandedRow] = useState<{ userId: string; mode: "password" | "roles" } | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const [roleActionPending, setRoleActionPending] = useState<string | null>(null);
+
+  const handleToggleActif = useCallback(
+    async (u: UtilisateurItem) => {
+      if (!accessToken) return;
+      setPendingToggle(u.id);
+      setActionError((prev) => ({ ...prev, [u.id]: "" }));
+      try {
+        await apiFetch(`/utilisateurs/${u.id}`, {
+          method: "PATCH",
+          token: accessToken,
+          body: { estActif: !u.estActif },
+        });
+        await fetchUtilisateurs();
+      } catch (e) {
+        setActionError((prev) => ({ ...prev, [u.id]: e instanceof ApiError ? e.message : "Erreur réseau" }));
+      } finally {
+        setPendingToggle(null);
+      }
+    },
+    [accessToken, fetchUtilisateurs],
+  );
+
+  const handleSubmitPassword = useCallback(
+    async (userId: string) => {
+      if (!accessToken || newPassword.length < 8) return;
+      setPasswordSubmitting(true);
+      setActionError((prev) => ({ ...prev, [userId]: "" }));
+      try {
+        await apiFetch(`/utilisateurs/${userId}/password`, {
+          method: "PATCH",
+          token: accessToken,
+          body: { nouveauMotDePasse: newPassword },
+        });
+        setNewPassword("");
+        setExpandedRow(null);
+      } catch (e) {
+        setActionError((prev) => ({ ...prev, [userId]: e instanceof ApiError ? e.message : "Erreur réseau" }));
+      } finally {
+        setPasswordSubmitting(false);
+      }
+    },
+    [accessToken, newPassword],
+  );
+
+  const handleToggleRole = useCallback(
+    async (u: UtilisateurItem, role: RoleItem) => {
+      if (!accessToken) return;
+      const hasRole = u.roles.some((r) => r.id === role.id);
+      setRoleActionPending(role.id);
+      setActionError((prev) => ({ ...prev, [u.id]: "" }));
+      try {
+        await apiFetch(`/utilisateurs/${u.id}/roles/${role.id}`, {
+          method: hasRole ? "DELETE" : "POST",
+          token: accessToken,
+        });
+        await fetchUtilisateurs();
+      } catch (e) {
+        setActionError((prev) => ({ ...prev, [u.id]: e instanceof ApiError ? e.message : "Erreur réseau" }));
+      } finally {
+        setRoleActionPending(null);
+      }
+    },
+    [accessToken, fetchUtilisateurs],
+  );
 
   if (status !== "ready" || !user) {
     return <div className="flex min-h-screen items-center justify-center text-navy/50">Chargement…</div>;
@@ -172,37 +244,145 @@ export function IdentityManagement() {
               {utilisateurs && utilisateurs.data.length > 0 && (
                 <>
                   <div className="overflow-x-auto rounded-xl bg-white shadow-sm">
-                    <table className="w-full text-left text-sm">
+                    <table className="w-full table-fixed text-left text-sm">
                       <thead className="border-b border-navy/10 text-navy/50">
                         <tr>
-                          <th className="px-4 py-3 font-medium">Nom</th>
-                          <th className="px-4 py-3 font-medium">Email</th>
-                          <th className="px-4 py-3 font-medium">Statut</th>
-                          <th className="px-4 py-3 font-medium">Rôles</th>
+                          <th className="w-1/5 px-4 py-3 font-medium">Nom</th>
+                          <th className="w-1/4 px-4 py-3 font-medium">Email</th>
+                          <th className="w-[10%] px-4 py-3 font-medium">Statut</th>
+                          <th className="w-[30%] px-4 py-3 font-medium">Rôles</th>
+                          <th className="w-[15%] px-4 py-3 text-right font-medium">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {utilisateurs.data.map((u) => (
-                          <tr key={u.id} className="border-b border-navy/5 last:border-0">
-                            <td className="px-4 py-3">
-                              {u.prenom} {u.nom}
-                            </td>
-                            <td className="px-4 py-3 text-navy/60">{u.email}</td>
-                            <td className="px-4 py-3">
-                              {u.estActif ? (
-                                <span className="rounded-full bg-status-green/10 px-2 py-0.5 text-xs font-medium text-status-green">
-                                  Actif
-                                </span>
-                              ) : (
-                                <span className="rounded-full bg-status-neutral/10 px-2 py-0.5 text-xs font-medium text-status-neutral">
-                                  Inactif
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-navy/60">
-                              {u.roles.map((r) => r.nomRole).join(", ") || "—"}
-                            </td>
-                          </tr>
+                          <Fragment key={u.id}>
+                            <tr className="border-b border-navy/5 last:border-0">
+                              <td className="truncate px-4 py-3">
+                                {u.prenom} {u.nom}
+                              </td>
+                              <td className="truncate px-4 py-3 text-navy/60">{u.email}</td>
+                              <td className="px-4 py-3">
+                                {u.estActif ? (
+                                  <span className="rounded-full bg-status-green/10 px-2 py-0.5 text-xs font-medium text-status-green">
+                                    Actif
+                                  </span>
+                                ) : (
+                                  <span className="rounded-full bg-status-neutral/10 px-2 py-0.5 text-xs font-medium text-status-neutral">
+                                    Inactif
+                                  </span>
+                                )}
+                              </td>
+                              <td className="truncate px-4 py-3 text-navy/60">
+                                {u.roles.map((r) => r.nomRole).join(", ") || "—"}
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    type="button"
+                                    title={u.estActif ? "Désactiver" : "Activer"}
+                                    onClick={() => handleToggleActif(u)}
+                                    disabled={pendingToggle === u.id}
+                                    className="rounded p-1.5 text-navy/50 hover:bg-navy/5 hover:text-navy disabled:opacity-40"
+                                  >
+                                    <Power size={16} strokeWidth={1.75} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Réinitialiser le mot de passe"
+                                    onClick={() =>
+                                      setExpandedRow(
+                                        expandedRow?.userId === u.id && expandedRow.mode === "password"
+                                          ? null
+                                          : { userId: u.id, mode: "password" },
+                                      )
+                                    }
+                                    className="rounded p-1.5 text-navy/50 hover:bg-navy/5 hover:text-navy"
+                                  >
+                                    <KeyRound size={16} strokeWidth={1.75} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Gérer les rôles"
+                                    onClick={() =>
+                                      setExpandedRow(
+                                        expandedRow?.userId === u.id && expandedRow.mode === "roles"
+                                          ? null
+                                          : { userId: u.id, mode: "roles" },
+                                      )
+                                    }
+                                    className="rounded p-1.5 text-navy/50 hover:bg-navy/5 hover:text-navy"
+                                  >
+                                    <Shield size={16} strokeWidth={1.75} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                            {actionError[u.id] && (
+                              <tr>
+                                <td colSpan={5} className="px-4 pb-2 text-xs text-status-red">
+                                  {actionError[u.id]}
+                                </td>
+                              </tr>
+                            )}
+                            {expandedRow?.userId === u.id && expandedRow.mode === "password" && (
+                              <tr className="border-b border-navy/5 bg-page">
+                                <td colSpan={5} className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="password"
+                                      placeholder="Nouveau mot de passe (min. 8, majuscule, minuscule, chiffre)"
+                                      value={newPassword}
+                                      onChange={(e) => setNewPassword(e.target.value)}
+                                      className="w-full max-w-sm rounded border border-navy/20 px-3 py-2 text-sm"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSubmitPassword(u.id)}
+                                      disabled={passwordSubmitting || newPassword.length < 8}
+                                      className="rounded bg-gold px-3 py-2 text-xs font-semibold text-navy disabled:opacity-40"
+                                    >
+                                      Confirmer
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setExpandedRow(null);
+                                        setNewPassword("");
+                                      }}
+                                      className="rounded border border-navy/20 px-3 py-2 text-xs text-navy"
+                                    >
+                                      Annuler
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                            {expandedRow?.userId === u.id && expandedRow.mode === "roles" && (
+                              <tr className="border-b border-navy/5 bg-page">
+                                <td colSpan={5} className="px-4 py-3">
+                                  <div className="flex flex-wrap gap-2">
+                                    {roles?.map((role) => {
+                                      const active = u.roles.some((r) => r.id === role.id);
+                                      return (
+                                        <button
+                                          key={role.id}
+                                          type="button"
+                                          onClick={() => handleToggleRole(u, role)}
+                                          disabled={roleActionPending === role.id}
+                                          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
+                                            active ? "bg-gold/10 text-gold" : "bg-navy/5 text-navy/50 hover:bg-navy/10"
+                                          }`}
+                                        >
+                                          {role.nomRole}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>
