@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState, useCallback } from "react";
-import { Power, KeyRound, Shield } from "lucide-react";
+import { Power, KeyRound, Shield, UserPlus } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 
@@ -120,6 +120,31 @@ export function IdentityManagement() {
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [roleActionPending, setRoleActionPending] = useState<string | null>(null);
 
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createForm, setCreateForm] = useState({ nom: "", prenom: "", email: "", motDePasse: "" });
+  const [createError, setCreateError] = useState("");
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+
+  const handleCreateUser = useCallback(async () => {
+    if (!accessToken) return;
+    setCreateSubmitting(true);
+    setCreateError("");
+    try {
+      await apiFetch("/utilisateurs", {
+        method: "POST",
+        token: accessToken,
+        body: createForm,
+      });
+      setCreateForm({ nom: "", prenom: "", email: "", motDePasse: "" });
+      setShowCreateForm(false);
+      await fetchUtilisateurs();
+    } catch (e) {
+      setCreateError(e instanceof ApiError ? e.message : "Erreur réseau");
+    } finally {
+      setCreateSubmitting(false);
+    }
+  }, [accessToken, createForm, fetchUtilisateurs]);
+
   const handleToggleActif = useCallback(
     async (u: UtilisateurItem) => {
       if (!accessToken) return;
@@ -222,16 +247,88 @@ export function IdentityManagement() {
             <section>
               <h2 className="mb-4 text-lg font-semibold text-navy">Utilisateurs</h2>
 
-              <input
-                type="text"
-                placeholder="Rechercher par nom…"
-                value={search}
-                onChange={(e) => {
-                  setPage(1);
-                  setSearch(e.target.value);
-                }}
-                className="mb-4 w-full max-w-xs rounded border border-navy/20 px-3 py-2 text-sm"
-              />
+              <div className="mb-4 flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Rechercher un utilisateur…"
+                  value={search}
+                  onChange={(e) => {
+                    setPage(1);
+                    setSearch(e.target.value);
+                  }}
+                  className="w-full max-w-xs rounded border border-navy/20 px-3 py-2 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCreateForm((v) => !v)}
+                  className="flex flex-shrink-0 items-center gap-2 rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-navy transition-opacity hover:opacity-90"
+                >
+                  <UserPlus size={16} strokeWidth={1.75} />
+                  Créer un compte
+                </button>
+              </div>
+
+              {showCreateForm && (
+                <div className="mb-4 rounded-xl bg-white p-4 shadow-sm">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <input
+                      type="text"
+                      placeholder="Prénom"
+                      value={createForm.prenom}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, prenom: e.target.value }))}
+                      className="rounded border border-navy/20 px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Nom"
+                      value={createForm.nom}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, nom: e.target.value }))}
+                      className="rounded border border-navy/20 px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="email"
+                      placeholder="Email"
+                      value={createForm.email}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
+                      className="rounded border border-navy/20 px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="password"
+                      placeholder="Mot de passe (min. 8, majuscule, minuscule, chiffre)"
+                      value={createForm.motDePasse}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, motDePasse: e.target.value }))}
+                      className="rounded border border-navy/20 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  {createError && <p className="mt-2 text-xs text-status-red">{createError}</p>}
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCreateUser}
+                      disabled={
+                        createSubmitting ||
+                        !createForm.nom ||
+                        !createForm.prenom ||
+                        !createForm.email ||
+                        createForm.motDePasse.length < 8
+                      }
+                      className="rounded bg-gold px-3 py-2 text-xs font-semibold text-navy disabled:opacity-40"
+                    >
+                      Créer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCreateForm(false);
+                        setCreateError("");
+                      }}
+                      className="rounded border border-navy/20 px-3 py-2 text-xs text-navy"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {utilisateursError && <p className="text-sm text-status-red">{utilisateursError}</p>}
               {utilisateurs === null && !utilisateursError && (
@@ -247,34 +344,56 @@ export function IdentityManagement() {
                     <table className="w-full table-fixed text-left text-sm">
                       <thead className="border-b border-navy/10 text-navy/50">
                         <tr>
-                          <th className="w-1/5 px-4 py-3 font-medium">Nom</th>
-                          <th className="w-1/4 px-4 py-3 font-medium">Email</th>
-                          <th className="w-[10%] px-4 py-3 font-medium">Statut</th>
-                          <th className="w-[30%] px-4 py-3 font-medium">Rôles</th>
-                          <th className="w-[15%] px-4 py-3 text-right font-medium">Actions</th>
+                          <th className="w-2/5 px-4 py-3 font-medium">Utilisateur</th>
+                          <th className="w-1/4 px-4 py-3 font-medium">Rôles</th>
+                          <th className="w-[15%] px-4 py-3 font-medium">Statut</th>
+                          <th className="w-1/5 px-4 py-3 text-right font-medium">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {utilisateurs.data.map((u) => (
                           <Fragment key={u.id}>
                             <tr className="border-b border-navy/5 last:border-0">
-                              <td className="truncate px-4 py-3">
-                                {u.prenom} {u.nom}
-                              </td>
-                              <td className="truncate px-4 py-3 text-navy/60">{u.email}</td>
                               <td className="px-4 py-3">
-                                {u.estActif ? (
-                                  <span className="rounded-full bg-status-green/10 px-2 py-0.5 text-xs font-medium text-status-green">
-                                    Actif
-                                  </span>
-                                ) : (
-                                  <span className="rounded-full bg-status-neutral/10 px-2 py-0.5 text-xs font-medium text-status-neutral">
-                                    Inactif
-                                  </span>
-                                )}
+                                <div className="flex items-center gap-3">
+                                  <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">
+                                    {(u.prenom[0] ?? "").toUpperCase()}
+                                    {(u.nom[0] ?? "").toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="truncate text-xs font-semibold text-navy">
+                                      {u.prenom} {u.nom}
+                                    </p>
+                                    <p className="truncate text-[10px] text-navy/50">{u.email}</p>
+                                  </div>
+                                </div>
                               </td>
-                              <td className="truncate px-4 py-3 text-navy/60">
-                                {u.roles.map((r) => r.nomRole).join(", ") || "—"}
+                              <td className="px-4 py-3">
+                                <div className="flex flex-wrap gap-1">
+                                  {u.roles.length === 0 && <span className="text-xs text-navy/40">—</span>}
+                                  {u.roles.map((r) => (
+                                    <span
+                                      key={r.id}
+                                      className="inline-flex items-center rounded-full bg-navy/5 px-2 py-0.5 text-xs font-medium text-navy"
+                                    >
+                                      {r.nomRole}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span
+                                  className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                                    u.estActif ? "text-status-green" : "text-navy/50"
+                                  }`}
+                                >
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full ${
+                                      u.estActif ? "bg-status-green" : "bg-navy/30"
+                                    }`}
+                                  />
+                                  {u.estActif ? "Actif" : "Inactif"}
+                                </span>
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex items-center justify-end gap-1">
@@ -320,14 +439,14 @@ export function IdentityManagement() {
                             </tr>
                             {actionError[u.id] && (
                               <tr>
-                                <td colSpan={5} className="px-4 pb-2 text-xs text-status-red">
+                                <td colSpan={4} className="px-4 pb-2 text-xs text-status-red">
                                   {actionError[u.id]}
                                 </td>
                               </tr>
                             )}
                             {expandedRow?.userId === u.id && expandedRow.mode === "password" && (
                               <tr className="border-b border-navy/5 bg-page">
-                                <td colSpan={5} className="px-4 py-3">
+                                <td colSpan={4} className="px-4 py-3">
                                   <div className="flex items-center gap-2">
                                     <input
                                       type="password"
@@ -360,7 +479,7 @@ export function IdentityManagement() {
                             )}
                             {expandedRow?.userId === u.id && expandedRow.mode === "roles" && (
                               <tr className="border-b border-navy/5 bg-page">
-                                <td colSpan={5} className="px-4 py-3">
+                                <td colSpan={4} className="px-4 py-3">
                                   <div className="flex flex-wrap gap-2">
                                     {roles?.map((role) => {
                                       const active = u.roles.some((r) => r.id === role.id);
