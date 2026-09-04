@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
+import { BackLink } from "../../_components/BackLink";
 import type { CoursSupportITResponseDto } from "@/lib/types/support-it";
 
 type FetchStatus = "loading" | "ready" | "error";
@@ -42,9 +42,7 @@ export default function ItCoursDetailPage({ params }: { params: { id: string } }
 
   return (
     <div className="p-6">
-      <Link href="/it/cours" className="text-sm text-navy/60 hover:text-navy">
-        ← Retour aux cours
-      </Link>
+      <BackLink href="/it/cours" label="Retour aux cours" />
 
       <h1 className="mt-2 text-xl font-semibold text-navy">Détail du cours</h1>
 
