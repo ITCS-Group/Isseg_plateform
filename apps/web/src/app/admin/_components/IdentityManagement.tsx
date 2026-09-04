@@ -1,14 +1,5 @@
 "use client";
 
-/**
- * Gestion Utilisateurs/Rôles/Permissions — code de l'ancien contenu de
- * /admin (chantier Étape 2), préservé tel quel dans l'attente de l'Étape 5
- * ("Déplacement du RBAC") qui le montera sous /admin/parametres/*. Pas encore
- * importé/routé nulle part à ce stade (Étape 3 = Dashboard visuel uniquement)
- * — composant intentionnellement inutilisé pour l'instant, pas du code mort
- * à supprimer.
- */
-
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
