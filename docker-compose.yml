@@ -42,25 +42,33 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
+      target: dependencies
     ports:
       - "3001:3000"
     volumes:
-      - ./apps/api:/app
-      - /app/node_modules
+      - ./apps/api:/app/apps/api
+      - /app/apps/api/node_modules
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-isseg}?schema=public
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-abdoul}:${POSTGRES_PASSWORD:-azerty}@postgres:5432/${POSTGRES_DB:-isseg}?schema=public
+      # REDIS_HOST: redis
+      # REDIS_PORT: 6379
+      CORS_ORIGIN: http://localhost:3000
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_ME_IN_PRODUCTION}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-CHANGE_ME_REFRESH_IN_PRODUCTION}
       NODE_ENV: ${NODE_ENV:-development}
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      # redis:
+      #   condition: service_healthy
+      # Désactivé pour l'instant : l'API ne consomme pas encore Redis en
+      # pratique (aucun ioredis/bullmq dans apps/api, seul apps/worker
+      # l'utilise) — à réactiver si l'API pousse un jour des jobs en queue.
     restart: unless-stopped
     networks:
       - isseg-network
-    command: npm run dev
+    command: pnpm --filter api dev
 
 
   web:
@@ -68,17 +76,25 @@ services:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
+      target: dependencies
     ports:
       - "3000:3000"
     volumes:
-      - ./apps/web:/app
-      - /app/node_modules
+      - ./apps/web:/app/apps/web
+      - /app/apps/web/node_modules
+      - ./packages:/app/packages
+      - /app/packages/ui/node_modules
+      - /app/packages/config/node_modules
+      - /app/packages/shared/node_modules
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+      NODE_ENV: ${NODE_ENV:-development}
     depends_on:
       - api
     restart: unless-stopped
     networks:
       - isseg-network
-    command: npm run dev
+    command: pnpm --filter web dev
 
 
   worker:
@@ -86,9 +102,10 @@ services:
     build:
       context: .
       dockerfile: docker/worker.Dockerfile
+      target: dependencies
     volumes:
-      - ./apps/worker:/app
-      - /app/node_modules
+      - ./apps/worker:/app/apps/worker
+      - /app/apps/worker/node_modules
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -99,7 +116,7 @@ services:
     restart: unless-stopped
     networks:
       - isseg-network
-    command: npm run dev
+    command: pnpm --filter worker dev
 
 
 networks:
