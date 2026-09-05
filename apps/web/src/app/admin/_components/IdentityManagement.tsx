@@ -204,6 +204,9 @@ export function IdentityManagement() {
           token: accessToken,
         });
         await fetchUtilisateurs();
+        if (!hasRole) {
+          setExpandedRow(null);
+        }
       } catch (e) {
         setActionError((prev) => ({ ...prev, [u.id]: e instanceof ApiError ? e.message : "Erreur réseau" }));
       } finally {
