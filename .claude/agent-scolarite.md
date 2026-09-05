@@ -2,6 +2,11 @@
 
 Ce fichier fournit un contexte détaillé pour le module **Scolarité** de la plateforme ISSEG.
 
+> **Contrainte transversale obligatoire** : tout écran ou composant frontend de ce
+> module (`apps/web`) doit respecter `.claude/agent-responsive-design.md` (responsive
+> 375px/768px/1280px+, breakpoints Tailwind, pas de largeurs fixes sur les conteneurs
+> principaux) — cette règle s'applique en plus de celles listées ici, dès la conception.
+
 ## Périmètre Fonctionnel
 
 Le module Scolarité gère l'ensemble du cycle de vie administratif de l'étudiant :
