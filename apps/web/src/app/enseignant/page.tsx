@@ -32,6 +32,7 @@ type Tab = "cours" | "notes" | "emploi" | "messages";
 export default function TeacherDashboardPage() {
   const { user, accessToken, status, logout } = useProtectedRoute("/enseignant");
   const [tab, setTab] = useState<Tab>("cours");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const [cours, setCours] = useState<CoursClasse[] | null>(null);
   const [coursError, setCoursError] = useState("");
@@ -111,12 +112,18 @@ export default function TeacherDashboardPage() {
         userName={`${user.prenom} ${user.nom}`}
         userRole={user.roles.join(", ")}
         onLogout={logout}
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
       />
 
       <div className="flex flex-1 flex-col">
-        <AppHeader userName={`${user.prenom} ${user.nom}`} userRole={user.roles.join(", ")} />
+        <AppHeader
+          userName={`${user.prenom} ${user.nom}`}
+          userRole={user.roles.join(", ")}
+          onMenuClick={() => setMobileNavOpen(true)}
+        />
 
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
           {tab === "cours" && (
             <section>
               <h2 className="mb-4 text-lg font-semibold text-navy">Mes cours</h2>
@@ -144,8 +151,79 @@ export default function TeacherDashboardPage() {
               {notes === null && !notesError && <p className="text-sm text-navy/50">Chargement…</p>}
               {notes?.length === 0 && <p className="text-sm text-navy/50">Aucune note pour le moment.</p>}
               {notes && notes.length > 0 && (
-                <div className="overflow-x-auto rounded-xl bg-white shadow-sm">
-                  <table className="w-full text-left text-sm">
+                <>
+                  {/* Vue mobile : cartes empilées (sous md) */}
+                  <div className="space-y-3 md:hidden">
+                    {notes.map((n) => {
+                      const isEditing = editingId === n.id;
+                      return (
+                        <div key={n.id} className="rounded-xl bg-white p-4 shadow-sm">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-navy">
+                                {n.etudiantPrenom} {n.etudiantNom}
+                              </p>
+                              <p className="text-xs text-navy/50">{n.etudiantMatricule ?? "—"}</p>
+                            </div>
+                            {isEditing ? (
+                              <div className="flex flex-shrink-0 gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveNote(n.id)}
+                                  disabled={savingId === n.id}
+                                  className="rounded bg-status-green/10 p-1.5 text-status-green"
+                                >
+                                  <Check size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingId(null)}
+                                  className="rounded bg-navy/5 p-1.5 text-navy/50"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingId(n.id);
+                                  setEditValue(String(n.noteBrute));
+                                }}
+                                className="flex-shrink-0 rounded p-1.5 text-navy/40 hover:bg-navy/5 hover:text-navy"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                            )}
+                          </div>
+                          <p className="mt-2 truncate text-sm text-navy/60">
+                            <span className="font-medium">{n.coursCode}</span> {n.coursTitre} ·{" "}
+                            {n.epreuveType}
+                          </p>
+                          <div className="mt-2">
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                min={0}
+                                max={20}
+                                step={0.5}
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                className="w-20 rounded border border-navy/20 px-2 py-1 text-sm"
+                                autoFocus
+                              />
+                            ) : (
+                              <span className="text-lg font-semibold text-navy">{n.noteBrute}/20</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Vue tablette/desktop : tableau (à partir de md) */}
+                  <div className="hidden overflow-x-auto rounded-xl bg-white shadow-sm md:block">
+                    <table className="w-full text-left text-sm">
                     <thead className="border-b border-navy/10 text-navy/50">
                       <tr>
                         <th className="px-4 py-3 font-medium">Étudiant</th>
@@ -222,8 +300,9 @@ export default function TeacherDashboardPage() {
                         );
                       })}
                     </tbody>
-                  </table>
-                </div>
+                    </table>
+                  </div>
+                </>
               )}
             </section>
           )}
