@@ -296,6 +296,14 @@ Pour travailler sur un module spécifique, se référer à ces fichiers de conte
 - Départements & Validation : `.claude/agent-departements.md`
 - Innovation & Publications : `.claude/agent-innovation.md`
 - DevOps & Infrastructure : `.claude/agent-devops.md`
+- **Design responsive (apps/web) : `.claude/agent-responsive-design.md`** —
+  transversal, ne remplace aucun des fichiers ci-dessus. **Obligatoire pour tout
+  travail touchant `apps/web` ou `packages/ui`, quel que soit le domaine** :
+  chaque fichier de contexte ci-dessus (présent ou futur) hérite de cette
+  contrainte dès la conception d'un écran, sans qu'elle ait besoin d'être
+  redemandée à chaque fois. En cas de doute ou de conflit d'interprétation entre
+  un fichier de domaine et `agent-responsive-design.md` sur un point purement
+  responsive (breakpoints, repli mobile), ce dernier fait foi.
 
 ## Variables d'environnement
 
