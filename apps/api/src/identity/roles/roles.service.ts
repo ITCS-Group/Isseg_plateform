@@ -5,10 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateRoleDto } from './dto/create-role.dto';
+import { ListRoleQueryDto } from './dto/list-role-query.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
-import { RoleResponseDto } from './dto/role.response.dto';
+import { PaginatedRoleResponseDto, RoleResponseDto } from './dto/role.response.dto';
 
 // ── Sélection Prisma ─────────────────────────────────────────────────────────
 
@@ -36,12 +38,30 @@ export class RolesService {
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
-  async findAll(): Promise<RoleResponseDto[]> {
-    const rows = await this.prisma.role.findMany({
-      select: ROLE_SELECT,
-      orderBy: { nomRole: 'asc' },
-    });
-    return rows.map(this.toDto);
+  async findAll(query: ListRoleQueryDto): Promise<PaginatedRoleResponseDto> {
+    // Aucun filtre métier sur cet endpoint : le même `where` (vide) est passé
+    // à findMany et à count, pour que meta.total reste cohérent si un filtre
+    // est ajouté plus tard.
+    const where: Prisma.RoleWhereInput = {};
+
+    const [rows, total] = await Promise.all([
+      this.prisma.role.findMany({
+        where,
+        select: ROLE_SELECT,
+        orderBy: { nomRole: 'asc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.role.count({ where }),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data: rows.map(this.toDto), meta };
   }
 
   async findOne(id: string): Promise<RoleResponseDto> {

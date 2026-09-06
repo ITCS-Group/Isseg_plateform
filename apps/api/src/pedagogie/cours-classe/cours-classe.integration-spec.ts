@@ -12,6 +12,9 @@ let service: CoursClasseService;
 
 const ADMIN = { id: 'admin-int', roles: ['ADMIN'] };
 
+/** Pagination par défaut (cf. PaginationDto) — page 1, 20 éléments. */
+const PAGE_DEFAUT = { page: 1, limit: 20 };
+
 async function makeCoursScenarise(statutValidation: StatutValidation = StatutValidation.APPROUVE) {
   const user = await prisma.utilisateur.create({
     data: { nom: 'Ens', prenom: 'Seignant', email: uid('ens') + '@t.local', motDePasseHash: 'x' },
@@ -73,9 +76,10 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       await prisma.coursClasse.create({ data: { coursId: coursA.id, classeId: classeA.id } });
       await prisma.coursClasse.create({ data: { coursId: coursB.id, classeId: classeB.id } });
 
-      const result = await service.findAll({}, ADMIN);
+      const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN);
 
-      expect(result).toHaveLength(2);
+      expect(result.data).toHaveLength(2);
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
     });
 
     it('avec coursId : filtre uniquement les associations de ce cours', async () => {
@@ -86,10 +90,11 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       const ccA = await prisma.coursClasse.create({ data: { coursId: coursA.id, classeId: classeA.id } });
       await prisma.coursClasse.create({ data: { coursId: coursB.id, classeId: classeB.id } });
 
-      const result = await service.findAll({ coursId: coursA.id }, ADMIN);
+      const result = await service.findAll({ ...PAGE_DEFAUT, coursId: coursA.id }, ADMIN);
 
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe(ccA.id);
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe(ccA.id);
+      expect(result.meta.total).toBe(1);
     });
 
     it('avec classeId : filtre uniquement les associations de cette classe', async () => {
@@ -99,10 +104,11 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       await prisma.coursClasse.create({ data: { coursId: coursA.id, classeId: classeA.id } });
       const ccB = await prisma.coursClasse.create({ data: { coursId: coursB.id, classeId: classeA.id } });
 
-      const result = await service.findAll({ classeId: classeA.id }, ADMIN);
+      const result = await service.findAll({ ...PAGE_DEFAUT, classeId: classeA.id }, ADMIN);
 
-      expect(result).toHaveLength(2);
-      expect(result.map((r) => r.id)).toEqual(expect.arrayContaining([ccB.id]));
+      expect(result.data).toHaveLength(2);
+      expect(result.data.map((r) => r.id)).toEqual(expect.arrayContaining([ccB.id]));
+      expect(result.meta.total).toBe(2);
     });
 
     it('avec coursId et classeId : filtre sur les deux critères combinés', async () => {
@@ -114,10 +120,88 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       await prisma.coursClasse.create({ data: { coursId: coursA.id, classeId: classeB.id } });
       await prisma.coursClasse.create({ data: { coursId: coursB.id, classeId: classeA.id } });
 
-      const result = await service.findAll({ coursId: coursA.id, classeId: classeA.id }, ADMIN);
+      const result = await service.findAll(
+        { ...PAGE_DEFAUT, coursId: coursA.id, classeId: classeA.id },
+        ADMIN,
+      );
 
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe(ccA.id);
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe(ccA.id);
+      expect(result.meta.total).toBe(1);
+    });
+
+    // ── Pagination (BACK-02-B1) ─────────────────────────────────────────────
+
+    it('page par défaut : meta cohérent avec le nombre réel d’enregistrements', async () => {
+      const cours = await makeCoursScenarise();
+      for (let i = 0; i < 3; i++) {
+        const classe = await makeClasse();
+        await prisma.coursClasse.create({ data: { coursId: cours.id, classeId: classe.id } });
+      }
+
+      const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN);
+
+      expect(result.data).toHaveLength(3);
+      expect(result.meta).toEqual({ total: 3, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('dernière page partielle : totalPages arrondi au supérieur, data tronquée', async () => {
+      const cours = await makeCoursScenarise();
+      for (let i = 0; i < 5; i++) {
+        const classe = await makeClasse();
+        await prisma.coursClasse.create({ data: { coursId: cours.id, classeId: classe.id } });
+      }
+
+      const page3 = await service.findAll({ page: 3, limit: 2 }, ADMIN);
+
+      expect(page3.data).toHaveLength(1);
+      expect(page3.meta).toEqual({ total: 5, page: 3, limit: 2, totalPages: 3 });
+    });
+
+    it('collection vide : data vide et totalPages plancher à 1', async () => {
+      const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN);
+
+      expect(result.data).toEqual([]);
+      expect(result.meta).toEqual({ total: 0, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('pagination + filtre : meta.total ne compte que les lignes filtrées', async () => {
+      const coursA = await makeCoursScenarise();
+      const coursB = await makeCoursScenarise();
+      const classe1 = await makeClasse();
+      const classe2 = await makeClasse();
+      const classe3 = await makeClasse();
+      await prisma.coursClasse.create({ data: { coursId: coursA.id, classeId: classe1.id } });
+      await prisma.coursClasse.create({ data: { coursId: coursA.id, classeId: classe2.id } });
+      await prisma.coursClasse.create({ data: { coursId: coursB.id, classeId: classe3.id } });
+
+      const result = await service.findAll({ page: 1, limit: 1, coursId: coursA.id }, ADMIN);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 1, totalPages: 2 });
+    });
+
+    it('ENSEIGNANT : meta.total est borné par le scoping RBAC, pas par la table entière', async () => {
+      const coursMien = await makeCoursScenarise();
+      const coursAutre = await makeCoursScenarise();
+      const classe1 = await makeClasse();
+      const classe2 = await makeClasse();
+      const classe3 = await makeClasse();
+      await prisma.coursClasse.create({ data: { coursId: coursMien.id, classeId: classe1.id } });
+      await prisma.coursClasse.create({ data: { coursId: coursMien.id, classeId: classe2.id } });
+      await prisma.coursClasse.create({ data: { coursId: coursAutre.id, classeId: classe3.id } });
+
+      // Retrouve le compte Utilisateur derrière l'enseignant propriétaire de coursMien.
+      const enseignant = await prisma.enseignant.findUniqueOrThrow({
+        where: { id: coursMien.enseignantId },
+        select: { personnel: { select: { userId: true } } },
+      });
+      const teacher = { id: enseignant.personnel.userId, roles: ['ENSEIGNANT'] };
+
+      const result = await service.findAll({ page: 1, limit: 1 }, teacher);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 1, totalPages: 2 });
     });
   });
 

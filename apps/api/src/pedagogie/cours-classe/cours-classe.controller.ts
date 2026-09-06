@@ -24,7 +24,10 @@ import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import { CoursClasseService } from './cours-classe.service';
 import { CreateCoursClasseDto } from './dto/create-cours-classe.dto';
 import { ListCoursClasseQueryDto } from './dto/list-cours-classe-query.dto';
-import { CoursClasseResponseDto } from './dto/cours-classe.response.dto';
+import {
+  CoursClasseResponseDto,
+  PaginatedCoursClasseResponseDto,
+} from './dto/cours-classe.response.dto';
 
 @ApiTags('Pédagogie — Cours/Classe')
 @ApiBearerAuth('JWT')
@@ -43,11 +46,11 @@ export class CoursClasseController {
       "Un appelant ENSEIGNANT ne voit que ses propres cours, quel que soit le filtre " +
       "`enseignantId` fourni (ignoré et remplacé par son propre id).",
   })
-  @ApiResponse({ status: 200, type: [CoursClasseResponseDto] })
+  @ApiResponse({ status: 200, type: PaginatedCoursClasseResponseDto })
   findAll(
     @Query() query: ListCoursClasseQueryDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<CoursClasseResponseDto[]> {
+  ): Promise<PaginatedCoursClasseResponseDto> {
     return this.coursClasseService.findAll(query, user);
   }
 

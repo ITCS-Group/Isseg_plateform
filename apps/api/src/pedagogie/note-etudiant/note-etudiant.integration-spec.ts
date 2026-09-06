@@ -76,6 +76,9 @@ async function makeInscription() {
 
 const ADMIN = { id: 'admin-int', roles: ['ADMIN'] };
 
+/** Pagination par défaut (cf. PaginationDto) — page 1, 20 éléments. */
+const PAGE_DEFAUT = { page: 1, limit: 20 };
+
 /**
  * ADMIN réel (ligne Utilisateur existante), requis pour les appels update()
  * car NoteEtudiantHistory.modifieParId porte une FK vers Utilisateur.
@@ -204,12 +207,88 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
       await service.create({ epreuveId: s1.epreuve.id, inscriptionId: insc2.id, noteBrute: 11 }, ADMIN);
       await service.create({ epreuveId: s2.epreuve.id, inscriptionId: insc1.id, noteBrute: 12 }, ADMIN);
 
-      expect(await service.findAll({}, ADMIN)).toHaveLength(3);
-      expect(await service.findAll({ epreuveId: s1.epreuve.id }, ADMIN)).toHaveLength(2);
-      expect(await service.findAll({ inscriptionId: insc1.id }, ADMIN)).toHaveLength(2);
-      const combined = await service.findAll({ epreuveId: s1.epreuve.id, inscriptionId: insc1.id }, ADMIN);
-      expect(combined).toHaveLength(1);
-      expect(combined[0].id).toBe(n1.id);
+      expect((await service.findAll({ ...PAGE_DEFAUT }, ADMIN)).data).toHaveLength(3);
+      expect(
+        (await service.findAll({ ...PAGE_DEFAUT, epreuveId: s1.epreuve.id }, ADMIN)).data,
+      ).toHaveLength(2);
+      expect(
+        (await service.findAll({ ...PAGE_DEFAUT, inscriptionId: insc1.id }, ADMIN)).data,
+      ).toHaveLength(2);
+      const combined = await service.findAll(
+        { ...PAGE_DEFAUT, epreuveId: s1.epreuve.id, inscriptionId: insc1.id },
+        ADMIN,
+      );
+      expect(combined.data).toHaveLength(1);
+      expect(combined.data[0].id).toBe(n1.id);
+      expect(combined.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    // ── Pagination (BACK-02-B1) ─────────────────────────────────────────────
+
+    it('page par défaut : meta cohérent avec le nombre réel d’enregistrements', async () => {
+      const s1 = await makeScenario();
+      for (let i = 0; i < 3; i++) {
+        const insc = await makeInscription();
+        await service.create({ epreuveId: s1.epreuve.id, inscriptionId: insc.id, noteBrute: 10 }, ADMIN);
+      }
+
+      const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN);
+
+      expect(result.data).toHaveLength(3);
+      expect(result.meta).toEqual({ total: 3, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('dernière page partielle : totalPages arrondi au supérieur, data tronquée', async () => {
+      const s1 = await makeScenario();
+      for (let i = 0; i < 5; i++) {
+        const insc = await makeInscription();
+        await service.create({ epreuveId: s1.epreuve.id, inscriptionId: insc.id, noteBrute: 10 }, ADMIN);
+      }
+
+      const page3 = await service.findAll({ page: 3, limit: 2 }, ADMIN);
+
+      expect(page3.data).toHaveLength(1);
+      expect(page3.meta).toEqual({ total: 5, page: 3, limit: 2, totalPages: 3 });
+    });
+
+    it('collection vide : data vide et totalPages plancher à 1', async () => {
+      const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN);
+
+      expect(result.data).toEqual([]);
+      expect(result.meta).toEqual({ total: 0, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('pagination + filtre : meta.total ne compte que les lignes filtrées', async () => {
+      const s1 = await makeScenario();
+      const s2 = await makeScenario();
+      const insc1 = await makeInscription();
+      const insc2 = await makeInscription();
+      await service.create({ epreuveId: s1.epreuve.id, inscriptionId: insc1.id, noteBrute: 10 }, ADMIN);
+      await service.create({ epreuveId: s1.epreuve.id, inscriptionId: insc2.id, noteBrute: 11 }, ADMIN);
+      await service.create({ epreuveId: s2.epreuve.id, inscriptionId: insc1.id, noteBrute: 12 }, ADMIN);
+
+      const result = await service.findAll({ page: 1, limit: 1, epreuveId: s1.epreuve.id }, ADMIN);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 1, totalPages: 2 });
+    });
+
+    it('ENSEIGNANT : meta.total est borné par le scoping RBAC, pas par la table entière', async () => {
+      const mien = await makeScenario();
+      const autre = await makeScenario();
+      const insc1 = await makeInscription();
+      const insc2 = await makeInscription();
+      await service.create({ epreuveId: mien.epreuve.id, inscriptionId: insc1.id, noteBrute: 10 }, ADMIN);
+      await service.create({ epreuveId: mien.epreuve.id, inscriptionId: insc2.id, noteBrute: 11 }, ADMIN);
+      await service.create({ epreuveId: autre.epreuve.id, inscriptionId: insc1.id, noteBrute: 12 }, ADMIN);
+
+      const result = await service.findAll(
+        { page: 1, limit: 1 },
+        { id: mien.teacherUserId, roles: ['ENSEIGNANT'] },
+      );
+
+      expect(result.data).toHaveLength(1);
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 1, totalPages: 2 });
     });
   });
 

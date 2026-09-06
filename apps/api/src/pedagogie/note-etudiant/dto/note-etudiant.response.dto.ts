@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { TypeEpreuve } from '@prisma/client';
+import { PaginationMetaDto } from '../../../common/dto/pagination.dto';
 
 export class NoteEtudiantResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -40,4 +41,12 @@ export class NoteEtudiantResponseDto {
 
   @ApiProperty({ nullable: true, description: 'Matricule de l’étudiant (peut être non attribué)' })
   etudiantMatricule: string | null;
+}
+
+export class PaginatedNoteEtudiantResponseDto {
+  @ApiProperty({ type: [NoteEtudiantResponseDto] })
+  data: NoteEtudiantResponseDto[];
+
+  @ApiProperty({ type: PaginationMetaDto })
+  meta: PaginationMetaDto;
 }

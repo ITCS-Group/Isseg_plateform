@@ -7,11 +7,15 @@ import {
 } from '@nestjs/common';
 import { Prisma, StatutValidation } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateNoteEtudiantDto } from './dto/create-note-etudiant.dto';
 import { ListNoteEtudiantQueryDto } from './dto/list-note-etudiant-query.dto';
 import { UpdateNoteEtudiantDto } from './dto/update-note-etudiant.dto';
-import { NoteEtudiantResponseDto } from './dto/note-etudiant.response.dto';
+import {
+  NoteEtudiantResponseDto,
+  PaginatedNoteEtudiantResponseDto,
+} from './dto/note-etudiant.response.dto';
 
 /** Rôles dispensés de la vérification de propriété enseignant (§7 spécification). */
 const OWNERSHIP_EXEMPT_ROLES = ['ADMIN', 'DGA_ETUDES'];
@@ -118,24 +122,41 @@ export class NoteEtudiantService {
   async findAll(
     query: ListNoteEtudiantQueryDto,
     user: Pick<AuthenticatedUser, 'id' | 'roles'>,
-  ): Promise<NoteEtudiantResponseDto[]> {
+  ): Promise<PaginatedNoteEtudiantResponseDto> {
     const scope = await this.resolveForcedEnseignantId(user);
     if (scope.forced && scope.enseignantId === null) {
       // ENSEIGNANT sans fiche Enseignant liée à son compte : aucune note à afficher.
-      return [];
+      return { data: [], meta: this.buildMeta(0, query) };
     }
     const enseignantId = scope.forced ? scope.enseignantId : query.enseignantId;
 
-    const rows = await this.prisma.noteEtudiant.findMany({
-      where: {
-        epreuveId: query.epreuveId,
-        inscriptionId: query.inscriptionId,
-        ...(enseignantId ? { epreuve: { coursClasse: { cours: { enseignantId } } } } : {}),
-      },
-      select: NOTE_ETUDIANT_SELECT,
-      orderBy: { createdAt: 'desc' },
-    });
-    return rows.map(this.toDto);
+    const where: Prisma.NoteEtudiantWhereInput = {
+      epreuveId: query.epreuveId,
+      inscriptionId: query.inscriptionId,
+      ...(enseignantId ? { epreuve: { coursClasse: { cours: { enseignantId } } } } : {}),
+    };
+
+    const [rows, total] = await Promise.all([
+      this.prisma.noteEtudiant.findMany({
+        where,
+        select: NOTE_ETUDIANT_SELECT,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.noteEtudiant.count({ where }),
+    ]);
+
+    return { data: rows.map(this.toDto), meta: this.buildMeta(total, query) };
+  }
+
+  private buildMeta(total: number, query: ListNoteEtudiantQueryDto): PaginationMetaDto {
+    return {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
   }
 
   /**

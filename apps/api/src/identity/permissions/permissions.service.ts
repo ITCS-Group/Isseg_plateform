@@ -5,10 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
+import { ListPermissionQueryDto } from './dto/list-permission-query.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
-import { PermissionResponseDto } from './dto/permission.response.dto';
+import {
+  PaginatedPermissionResponseDto,
+  PermissionResponseDto,
+} from './dto/permission.response.dto';
 
 const PERMISSION_SELECT = {
   id: true,
@@ -28,12 +33,30 @@ export class PermissionsService {
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
-  async findAll(): Promise<PermissionResponseDto[]> {
-    const rows = await this.prisma.permission.findMany({
-      select: PERMISSION_SELECT,
-      orderBy: { nomPermission: 'asc' },
-    });
-    return rows.map(this.toDto);
+  async findAll(query: ListPermissionQueryDto): Promise<PaginatedPermissionResponseDto> {
+    // Aucun filtre métier sur cet endpoint : le même `where` (vide) est passé
+    // à findMany et à count, pour que meta.total reste cohérent si un filtre
+    // est ajouté plus tard.
+    const where: Prisma.PermissionWhereInput = {};
+
+    const [rows, total] = await Promise.all([
+      this.prisma.permission.findMany({
+        where,
+        select: PERMISSION_SELECT,
+        orderBy: { nomPermission: 'asc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.permission.count({ where }),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data: rows.map(this.toDto), meta };
   }
 
   async findOne(id: string): Promise<PermissionResponseDto> {

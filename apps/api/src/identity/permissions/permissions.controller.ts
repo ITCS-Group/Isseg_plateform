@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -20,8 +21,12 @@ import {
 } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreatePermissionDto } from './dto/create-permission.dto';
+import { ListPermissionQueryDto } from './dto/list-permission-query.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
-import { PermissionResponseDto } from './dto/permission.response.dto';
+import {
+  PaginatedPermissionResponseDto,
+  PermissionResponseDto,
+} from './dto/permission.response.dto';
 import { PermissionsService } from './permissions.service';
 
 @ApiTags('Rôles & Permissions')
@@ -32,10 +37,10 @@ export class PermissionsController {
   constructor(private readonly permissionsService: PermissionsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Lister toutes les permissions' })
-  @ApiResponse({ status: 200, type: [PermissionResponseDto] })
-  findAll(): Promise<PermissionResponseDto[]> {
-    return this.permissionsService.findAll();
+  @ApiOperation({ summary: 'Lister les permissions (paginé)' })
+  @ApiResponse({ status: 200, type: PaginatedPermissionResponseDto })
+  findAll(@Query() query: ListPermissionQueryDto): Promise<PaginatedPermissionResponseDto> {
+    return this.permissionsService.findAll(query);
   }
 
   @Post()

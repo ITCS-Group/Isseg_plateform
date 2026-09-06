@@ -9,6 +9,9 @@ let service: RolesService;
 
 const UUID_INEXISTANT = '00000000-0000-0000-0000-000000000000';
 
+/** Pagination par défaut (cf. PaginationDto) — page 1, 20 éléments. */
+const PAGE_DEFAUT = { page: 1, limit: 20 };
+
 async function creerPermission(nomPermission: string, description?: string) {
   return prisma.permission.create({ data: { nomPermission, description } });
 }
@@ -47,9 +50,10 @@ describe('Intégration — RolesService (isseg_test)', () => {
     const found = await service.findOne(created.id);
     expect(found.nomRole).toBe('SCOLARITE');
 
-    const all = await service.findAll();
-    expect(all).toHaveLength(1);
-    expect(all[0].id).toBe(created.id);
+    const all = await service.findAll({ ...PAGE_DEFAUT });
+    expect(all.data).toHaveLength(1);
+    expect(all.data[0].id).toBe(created.id);
+    expect(all.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
   });
 
   it('findAll : trie les rôles par nom croissant', async () => {
@@ -57,9 +61,50 @@ describe('Intégration — RolesService (isseg_test)', () => {
     await service.create({ nomRole: 'ENSEIGNANT' });
     await service.create({ nomRole: 'DGA_ETUDES' });
 
-    const all = await service.findAll();
+    const all = await service.findAll({ ...PAGE_DEFAUT });
 
-    expect(all.map((r) => r.nomRole)).toEqual(['DGA_ETUDES', 'ENSEIGNANT', 'SCOLARITE']);
+    expect(all.data.map((r) => r.nomRole)).toEqual(['DGA_ETUDES', 'ENSEIGNANT', 'SCOLARITE']);
+  });
+
+  // ── Pagination (BACK-02-B1) ─────────────────────────────────────────────
+
+  it('findAll : page par défaut, meta cohérent avec le nombre réel de rôles', async () => {
+    await service.create({ nomRole: 'SCOLARITE' });
+    await service.create({ nomRole: 'ENSEIGNANT' });
+    await service.create({ nomRole: 'DGA_ETUDES' });
+
+    const result = await service.findAll({ ...PAGE_DEFAUT });
+
+    expect(result.data).toHaveLength(3);
+    expect(result.meta).toEqual({ total: 3, page: 1, limit: 20, totalPages: 1 });
+  });
+
+  it('findAll : dernière page partielle, totalPages arrondi au supérieur', async () => {
+    for (const nomRole of ['A_ROLE', 'B_ROLE', 'C_ROLE', 'D_ROLE', 'E_ROLE']) {
+      await service.create({ nomRole });
+    }
+
+    const page3 = await service.findAll({ page: 3, limit: 2 });
+
+    expect(page3.data).toHaveLength(1);
+    expect(page3.data[0].nomRole).toBe('E_ROLE');
+    expect(page3.meta).toEqual({ total: 5, page: 3, limit: 2, totalPages: 3 });
+  });
+
+  it('findAll : collection vide → data vide et totalPages plancher à 1', async () => {
+    const result = await service.findAll({ ...PAGE_DEFAUT });
+
+    expect(result.data).toEqual([]);
+    expect(result.meta).toEqual({ total: 0, page: 1, limit: 20, totalPages: 1 });
+  });
+
+  it('findAll : page au-delà du dernier index → data vide, meta.total inchangé', async () => {
+    await service.create({ nomRole: 'SCOLARITE' });
+
+    const result = await service.findAll({ page: 5, limit: 20 });
+
+    expect(result.data).toEqual([]);
+    expect(result.meta).toEqual({ total: 1, page: 5, limit: 20, totalPages: 1 });
   });
 
   it('create : rattache les permissions passées dans permissionIds', async () => {

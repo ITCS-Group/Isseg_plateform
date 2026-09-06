@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -20,8 +21,9 @@ import {
 } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateRoleDto } from './dto/create-role.dto';
+import { ListRoleQueryDto } from './dto/list-role-query.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
-import { RoleResponseDto } from './dto/role.response.dto';
+import { PaginatedRoleResponseDto, RoleResponseDto } from './dto/role.response.dto';
 import { RolesService } from './roles.service';
 
 @ApiTags('Rôles & Permissions')
@@ -34,10 +36,10 @@ export class RolesController {
   // ── GET /api/v1/roles ────────────────────────────────────────────────────
 
   @Get()
-  @ApiOperation({ summary: 'Lister tous les rôles avec leurs permissions' })
-  @ApiResponse({ status: 200, type: [RoleResponseDto] })
-  findAll(): Promise<RoleResponseDto[]> {
-    return this.rolesService.findAll();
+  @ApiOperation({ summary: 'Lister les rôles avec leurs permissions (paginé)' })
+  @ApiResponse({ status: 200, type: PaginatedRoleResponseDto })
+  findAll(@Query() query: ListRoleQueryDto): Promise<PaginatedRoleResponseDto> {
+    return this.rolesService.findAll(query);
   }
 
   // ── POST /api/v1/roles ───────────────────────────────────────────────────
