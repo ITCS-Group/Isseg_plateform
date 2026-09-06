@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { BookOpen, ClipboardList, Calendar, MessageSquare, Pencil, Check, X } from "lucide-react";
 import { AppSidebar, AppHeader, type AppSidebarItem } from "@isseg/ui";
 import { apiFetch, ApiError } from "@/lib/api";
+import type { Paginated } from "@/lib/pagination";
 import { useProtectedRoute } from "@/lib/useProtectedRoute";
 
 interface CoursClasse {
@@ -37,6 +38,10 @@ export default function TeacherDashboardPage() {
   const [cours, setCours] = useState<CoursClasse[] | null>(null);
   const [coursError, setCoursError] = useState("");
   const [notes, setNotes] = useState<NoteEtudiant[] | null>(null);
+  // Total renvoyé par le backend (`meta.total`), et non la longueur de la page
+  // courante : le badge doit refléter le nombre réel de notes, pas les 20
+  // éléments de la première page.
+  const [notesTotal, setNotesTotal] = useState<number | null>(null);
   const [notesError, setNotesError] = useState("");
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -46,8 +51,8 @@ export default function TeacherDashboardPage() {
   const fetchCours = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const data = await apiFetch<CoursClasse[]>("/cours-classes", { token: accessToken });
-      setCours(data);
+      const res = await apiFetch<Paginated<CoursClasse>>("/cours-classes", { token: accessToken });
+      setCours(res.data);
     } catch (e) {
       setCoursError(e instanceof ApiError ? e.message : "Erreur réseau");
     }
@@ -56,8 +61,9 @@ export default function TeacherDashboardPage() {
   const fetchNotes = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const data = await apiFetch<NoteEtudiant[]>("/notes-etudiant", { token: accessToken });
-      setNotes(data);
+      const res = await apiFetch<Paginated<NoteEtudiant>>("/notes-etudiant", { token: accessToken });
+      setNotes(res.data);
+      setNotesTotal(res.meta.total);
     } catch (e) {
       setNotesError(e instanceof ApiError ? e.message : "Erreur réseau");
     }
@@ -97,7 +103,7 @@ export default function TeacherDashboardPage() {
 
   const items: AppSidebarItem[] = [
     { key: "cours", label: "Mes cours", icon: BookOpen },
-    { key: "notes", label: "Notes", icon: ClipboardList, badge: notes?.length },
+    { key: "notes", label: "Notes", icon: ClipboardList, badge: notesTotal ?? undefined },
     { key: "emploi", label: "Emploi du temps", icon: Calendar },
     { key: "messages", label: "Messages", icon: MessageSquare },
   ];
