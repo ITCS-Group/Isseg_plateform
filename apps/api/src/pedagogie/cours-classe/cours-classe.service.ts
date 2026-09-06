@@ -1,10 +1,14 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, StatutValidation } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateCoursClasseDto } from './dto/create-cours-classe.dto';
 import { ListCoursClasseQueryDto } from './dto/list-cours-classe-query.dto';
-import { CoursClasseResponseDto } from './dto/cours-classe.response.dto';
+import {
+  CoursClasseResponseDto,
+  PaginatedCoursClasseResponseDto,
+} from './dto/cours-classe.response.dto';
 
 /** Rôles qui voient toutes les associations, sans restriction à leurs propres cours. */
 const UNSCOPED_ROLES = ['ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT'];
@@ -31,24 +35,41 @@ export class CoursClasseService {
   async findAll(
     query: ListCoursClasseQueryDto,
     user: Pick<AuthenticatedUser, 'id' | 'roles'>,
-  ): Promise<CoursClasseResponseDto[]> {
+  ): Promise<PaginatedCoursClasseResponseDto> {
     const scope = await this.resolveForcedEnseignantId(user);
     if (scope.forced && scope.enseignantId === null) {
       // ENSEIGNANT sans fiche Enseignant liée à son compte : aucun cours à afficher.
-      return [];
+      return { data: [], meta: this.buildMeta(0, query) };
     }
     const enseignantId = scope.forced ? scope.enseignantId : query.enseignantId;
 
-    const rows = await this.prisma.coursClasse.findMany({
-      where: {
-        coursId: query.coursId,
-        classeId: query.classeId,
-        ...(enseignantId ? { cours: { enseignantId } } : {}),
-      },
-      select: COURS_CLASSE_SELECT,
-      orderBy: { createdAt: 'desc' },
-    });
-    return rows.map(this.toDto);
+    const where: Prisma.CoursClasseWhereInput = {
+      coursId: query.coursId,
+      classeId: query.classeId,
+      ...(enseignantId ? { cours: { enseignantId } } : {}),
+    };
+
+    const [rows, total] = await Promise.all([
+      this.prisma.coursClasse.findMany({
+        where,
+        select: COURS_CLASSE_SELECT,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.coursClasse.count({ where }),
+    ]);
+
+    return { data: rows.map(this.toDto), meta: this.buildMeta(total, query) };
+  }
+
+  private buildMeta(total: number, query: ListCoursClasseQueryDto): PaginationMetaDto {
+    return {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
   }
 
   /**

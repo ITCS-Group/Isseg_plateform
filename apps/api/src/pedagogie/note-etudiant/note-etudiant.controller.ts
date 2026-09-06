@@ -26,7 +26,10 @@ import { NoteEtudiantService } from './note-etudiant.service';
 import { CreateNoteEtudiantDto } from './dto/create-note-etudiant.dto';
 import { ListNoteEtudiantQueryDto } from './dto/list-note-etudiant-query.dto';
 import { UpdateNoteEtudiantDto } from './dto/update-note-etudiant.dto';
-import { NoteEtudiantResponseDto } from './dto/note-etudiant.response.dto';
+import {
+  NoteEtudiantResponseDto,
+  PaginatedNoteEtudiantResponseDto,
+} from './dto/note-etudiant.response.dto';
 
 @ApiTags('Pédagogie — Notes étudiant')
 @ApiBearerAuth('JWT')
@@ -45,11 +48,11 @@ export class NoteEtudiantController {
       "Un appelant ENSEIGNANT ne voit que les notes de ses propres cours, quel que soit le " +
       "filtre `enseignantId` fourni (ignoré et remplacé par son propre id).",
   })
-  @ApiResponse({ status: 200, type: [NoteEtudiantResponseDto] })
+  @ApiResponse({ status: 200, type: PaginatedNoteEtudiantResponseDto })
   findAll(
     @Query() query: ListNoteEtudiantQueryDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<NoteEtudiantResponseDto[]> {
+  ): Promise<PaginatedNoteEtudiantResponseDto> {
     return this.noteEtudiantService.findAll(query, user);
   }
 

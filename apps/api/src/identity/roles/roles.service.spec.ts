@@ -8,6 +8,7 @@ interface PrismaMock {
     create: jest.Mock;
     update: jest.Mock;
     delete: jest.Mock;
+    count: jest.Mock;
   };
   permission: {
     findUnique: jest.Mock;
@@ -36,6 +37,9 @@ const ROLE = {
   permissions: [{ permission: PERMISSION }],
 };
 
+/** Pagination par défaut (cf. PaginationDto) — évite de la répéter dans chaque appel. */
+const PAGE_DEFAUT = { page: 1, limit: 20 };
+
 describe('RolesService', () => {
   let service: RolesService;
   let prisma: PrismaMock;
@@ -48,6 +52,7 @@ describe('RolesService', () => {
         create: jest.fn().mockResolvedValue(ROLE),
         update: jest.fn().mockResolvedValue(ROLE),
         delete: jest.fn().mockResolvedValue(ROLE),
+        count: jest.fn().mockResolvedValue(1),
       },
       permission: {
         findUnique: jest.fn().mockResolvedValue(PERMISSION),
@@ -67,13 +72,68 @@ describe('RolesService', () => {
   // ── Lecture ───────────────────────────────────────────────────────────────
 
   it('findAll : trie par nomRole et aplatit les permissions', async () => {
-    const result = await service.findAll();
+    const result = await service.findAll({ ...PAGE_DEFAUT });
 
     expect(prisma.role.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ orderBy: { nomRole: 'asc' } }),
     );
-    expect(result).toHaveLength(1);
-    expect(result[0].permissions).toEqual([PERMISSION]);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].permissions).toEqual([PERMISSION]);
+  });
+
+  // ── Pagination (BACK-02-B1) ───────────────────────────────────────────────
+
+  it('findAll : page par défaut → {data, meta} avec skip=0/take=20', async () => {
+    prisma.role.count.mockResolvedValue(1);
+
+    const result = await service.findAll({ ...PAGE_DEFAUT });
+
+    expect(prisma.role.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 0, take: 20 }),
+    );
+    expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
+  });
+
+  it('findAll : meta.total vient d’un count recevant le même where que findMany', async () => {
+    prisma.role.count.mockResolvedValue(42);
+
+    const result = await service.findAll({ ...PAGE_DEFAUT });
+
+    const whereFindMany = prisma.role.findMany.mock.calls[0][0].where;
+    expect(prisma.role.count).toHaveBeenCalledWith({ where: whereFindMany });
+    expect(result.meta.total).toBe(42);
+  });
+
+  it('findAll : dernière page partielle → skip/take corrects, totalPages arrondi au supérieur', async () => {
+    prisma.role.count.mockResolvedValue(41);
+
+    const result = await service.findAll({ page: 3, limit: 20 });
+
+    expect(prisma.role.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 40, take: 20 }),
+    );
+    expect(result.meta).toEqual({ total: 41, page: 3, limit: 20, totalPages: 3 });
+  });
+
+  it('findAll : collection vide → totalPages plancher à 1', async () => {
+    prisma.role.findMany.mockResolvedValue([]);
+    prisma.role.count.mockResolvedValue(0);
+
+    const result = await service.findAll({ ...PAGE_DEFAUT });
+
+    expect(result.data).toEqual([]);
+    expect(result.meta).toEqual({ total: 0, page: 1, limit: 20, totalPages: 1 });
+  });
+
+  it('findAll : limit personnalisé → skip/take et totalPages cohérents', async () => {
+    prisma.role.count.mockResolvedValue(7);
+
+    const result = await service.findAll({ page: 2, limit: 5 });
+
+    expect(prisma.role.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 5, take: 5 }),
+    );
+    expect(result.meta).toEqual({ total: 7, page: 2, limit: 5, totalPages: 2 });
   });
 
   it('findOne : renvoie le DTO du rôle', async () => {

@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PaginationMetaDto } from '../../../common/dto/pagination.dto';
 
 export class PermissionBasicDto {
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
@@ -26,4 +27,12 @@ export class RoleResponseDto {
 
   @ApiProperty()
   updatedAt: Date;
+}
+
+export class PaginatedRoleResponseDto {
+  @ApiProperty({ type: [RoleResponseDto] })
+  data: RoleResponseDto[];
+
+  @ApiProperty({ type: PaginationMetaDto })
+  meta: PaginationMetaDto;
 }

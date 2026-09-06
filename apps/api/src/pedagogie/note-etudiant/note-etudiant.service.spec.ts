@@ -4,7 +4,13 @@ import { NoteEtudiantService } from './note-etudiant.service';
 
 // ── Mock Prisma ───────────────────────────────────────────────────────────────
 interface PrismaMock {
-  noteEtudiant: { findMany: jest.Mock; findUnique: jest.Mock; create: jest.Mock; delete: jest.Mock };
+  noteEtudiant: {
+    findMany: jest.Mock;
+    findUnique: jest.Mock;
+    create: jest.Mock;
+    delete: jest.Mock;
+    count: jest.Mock;
+  };
   epreuve: { findUnique: jest.Mock };
   inscription: { findUnique: jest.Mock };
   enseignant: { findFirst: jest.Mock };
@@ -15,6 +21,9 @@ const INSCRIPTION_ID = 'insc-1';
 const TEACHER_USER_ID = 'user-teacher-1';
 const ADMIN_USER = { id: 'admin-1', roles: ['ADMIN'] };
 const TEACHER_USER = { id: TEACHER_USER_ID, roles: ['ENSEIGNANT'] };
+
+/** Pagination par défaut (cf. PaginationDto) — évite de la répéter dans chaque appel. */
+const PAGE_DEFAUT = { page: 1, limit: 20 };
 
 function makeEpreuveWithChain(
   overrides: { statutValidation?: StatutValidation; enseignantUserId?: string } = {},
@@ -97,7 +106,13 @@ describe('NoteEtudiantService — create', () => {
 
   beforeEach(() => {
     prisma = {
-      noteEtudiant: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), delete: jest.fn() },
+      noteEtudiant: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        delete: jest.fn(),
+        count: jest.fn().mockResolvedValue(1),
+      },
       epreuve: { findUnique: jest.fn() },
       inscription: { findUnique: jest.fn() },
       enseignant: { findFirst: jest.fn() },
@@ -223,7 +238,13 @@ describe('NoteEtudiantService — findAll', () => {
 
   beforeEach(() => {
     prisma = {
-      noteEtudiant: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), delete: jest.fn() },
+      noteEtudiant: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        delete: jest.fn(),
+        count: jest.fn().mockResolvedValue(1),
+      },
       epreuve: { findUnique: jest.fn() },
       inscription: { findUnique: jest.fn() },
       enseignant: { findFirst: jest.fn() },
@@ -234,17 +255,17 @@ describe('NoteEtudiantService — findAll', () => {
   it('1 — ADMIN, liste sans filtre : findMany appelé, résultats enrichis mappés via toDto', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([makeCreatedRow()]);
 
-    const result = await service.findAll({}, ADMIN_USER);
+    const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN_USER);
 
     expect(prisma.noteEtudiant.findMany).toHaveBeenCalled();
-    expect(result).toHaveLength(1);
-    expect(result[0]).toEqual(makeDto());
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toEqual(makeDto());
   });
 
   it('2 — filtre epreuveId : présent tel quel dans le where (ADMIN)', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
 
-    await service.findAll({ epreuveId: EPREUVE_ID }, ADMIN_USER);
+    await service.findAll({ ...PAGE_DEFAUT, epreuveId: EPREUVE_ID }, ADMIN_USER);
 
     expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { epreuveId: EPREUVE_ID, inscriptionId: undefined } }),
@@ -254,7 +275,7 @@ describe('NoteEtudiantService — findAll', () => {
   it('3 — filtre inscriptionId : présent tel quel dans le where (ADMIN)', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
 
-    await service.findAll({ inscriptionId: INSCRIPTION_ID }, ADMIN_USER);
+    await service.findAll({ ...PAGE_DEFAUT, inscriptionId: INSCRIPTION_ID }, ADMIN_USER);
 
     expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { epreuveId: undefined, inscriptionId: INSCRIPTION_ID } }),
@@ -264,7 +285,10 @@ describe('NoteEtudiantService — findAll', () => {
   it('4 — filtres combinés : les deux présents simultanément dans le where (ADMIN)', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
 
-    await service.findAll({ epreuveId: EPREUVE_ID, inscriptionId: INSCRIPTION_ID }, ADMIN_USER);
+    await service.findAll(
+      { ...PAGE_DEFAUT, epreuveId: EPREUVE_ID, inscriptionId: INSCRIPTION_ID },
+      ADMIN_USER,
+    );
 
     expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { epreuveId: EPREUVE_ID, inscriptionId: INSCRIPTION_ID } }),
@@ -273,25 +297,26 @@ describe('NoteEtudiantService — findAll', () => {
 
   it('5 — aucun résultat : liste vide retournée, aucune exception levée', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
+    prisma.noteEtudiant.count.mockResolvedValue(0);
 
-    const result = await service.findAll({}, ADMIN_USER);
+    const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN_USER);
 
-    expect(result).toEqual([]);
+    expect(result.data).toEqual([]);
   });
 
   it('6 — Decimal converti en number dans le DTO retourné', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([makeCreatedRow({ noteBrute: 17 })]);
 
-    const result = await service.findAll({}, ADMIN_USER);
+    const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN_USER);
 
-    expect(result[0].noteBrute).toBe(17);
-    expect(typeof result[0].noteBrute).toBe('number');
+    expect(result.data[0].noteBrute).toBe(17);
+    expect(typeof result.data[0].noteBrute).toBe('number');
   });
 
-  it('7 — requête Prisma structurellement conforme (modèle, select enrichi, orderBy, pas de pagination)', async () => {
+  it('7 — requête Prisma structurellement conforme (modèle, select enrichi, orderBy, pagination)', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
 
-    await service.findAll({}, ADMIN_USER);
+    await service.findAll({ ...PAGE_DEFAUT }, ADMIN_USER);
 
     expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith({
       where: { epreuveId: undefined, inscriptionId: undefined },
@@ -325,13 +350,15 @@ describe('NoteEtudiantService — findAll', () => {
         },
       },
       orderBy: { createdAt: 'desc' },
+      skip: 0,
+      take: 20,
     });
   });
 
   it('8 — ADMIN avec enseignantId fourni : le filtre est transmis tel quel', async () => {
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
 
-    await service.findAll({ enseignantId: 'ens-42' }, ADMIN_USER);
+    await service.findAll({ ...PAGE_DEFAUT, enseignantId: 'ens-42' }, ADMIN_USER);
 
     expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -346,7 +373,7 @@ describe('NoteEtudiantService — findAll', () => {
     prisma.enseignant.findFirst.mockResolvedValue({ id: 'ens-self' });
     prisma.noteEtudiant.findMany.mockResolvedValue([]);
 
-    await service.findAll({ enseignantId: 'ens-autre' }, TEACHER_USER);
+    await service.findAll({ ...PAGE_DEFAUT, enseignantId: 'ens-autre' }, TEACHER_USER);
 
     expect(prisma.enseignant.findFirst).toHaveBeenCalledWith({
       where: { personnel: { userId: TEACHER_USER.id } },
@@ -364,10 +391,102 @@ describe('NoteEtudiantService — findAll', () => {
   it('10 — ENSEIGNANT sans fiche Enseignant liée : liste vide, aucun appel findMany', async () => {
     prisma.enseignant.findFirst.mockResolvedValue(null);
 
-    const result = await service.findAll({}, TEACHER_USER);
+    const result = await service.findAll({ ...PAGE_DEFAUT }, TEACHER_USER);
 
-    expect(result).toEqual([]);
+    expect(result.data).toEqual([]);
+    expect(result.meta).toEqual({ total: 0, page: 1, limit: 20, totalPages: 1 });
     expect(prisma.noteEtudiant.findMany).not.toHaveBeenCalled();
+    expect(prisma.noteEtudiant.count).not.toHaveBeenCalled();
+  });
+
+  // ── Pagination (BACK-02-B1) ─────────────────────────────────────────────────
+
+  it('11 — page par défaut : renvoie {data, meta} avec skip=0/take=20', async () => {
+    prisma.noteEtudiant.findMany.mockResolvedValue([makeCreatedRow()]);
+    prisma.noteEtudiant.count.mockResolvedValue(1);
+
+    const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN_USER);
+
+    expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 0, take: 20 }),
+    );
+    expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
+  });
+
+  it('12 — meta.total reflète le comptage réel filtré (count reçoit le même where)', async () => {
+    prisma.noteEtudiant.findMany.mockResolvedValue([makeCreatedRow()]);
+    prisma.noteEtudiant.count.mockResolvedValue(42);
+
+    const result = await service.findAll({ ...PAGE_DEFAUT, epreuveId: EPREUVE_ID }, ADMIN_USER);
+
+    expect(prisma.noteEtudiant.count).toHaveBeenCalledWith({
+      where: { epreuveId: EPREUVE_ID, inscriptionId: undefined },
+    });
+    expect(result.meta.total).toBe(42);
+  });
+
+  it('13 — dernière page partielle : skip/take corrects et totalPages arrondi au supérieur', async () => {
+    prisma.noteEtudiant.findMany.mockResolvedValue([makeCreatedRow()]);
+    prisma.noteEtudiant.count.mockResolvedValue(41);
+
+    const result = await service.findAll({ page: 3, limit: 20 }, ADMIN_USER);
+
+    expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 40, take: 20 }),
+    );
+    expect(result.meta).toEqual({ total: 41, page: 3, limit: 20, totalPages: 3 });
+    expect(result.data).toHaveLength(1);
+  });
+
+  it('14 — collection vide : totalPages plancher à 1', async () => {
+    prisma.noteEtudiant.findMany.mockResolvedValue([]);
+    prisma.noteEtudiant.count.mockResolvedValue(0);
+
+    const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN_USER);
+
+    expect(result.data).toEqual([]);
+    expect(result.meta).toEqual({ total: 0, page: 1, limit: 20, totalPages: 1 });
+  });
+
+  it('15 — pagination + filtres existants combinés', async () => {
+    prisma.noteEtudiant.findMany.mockResolvedValue([makeCreatedRow()]);
+    prisma.noteEtudiant.count.mockResolvedValue(7);
+
+    const result = await service.findAll(
+      { page: 2, limit: 5, epreuveId: EPREUVE_ID, inscriptionId: INSCRIPTION_ID },
+      ADMIN_USER,
+    );
+
+    expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { epreuveId: EPREUVE_ID, inscriptionId: INSCRIPTION_ID },
+        skip: 5,
+        take: 5,
+      }),
+    );
+    expect(result.meta).toEqual({ total: 7, page: 2, limit: 5, totalPages: 2 });
+  });
+
+  it('16 — ENSEIGNANT : le scoping RBAC est appliqué au findMany ET au count', async () => {
+    prisma.enseignant.findFirst.mockResolvedValue({ id: 'ens-self' });
+    prisma.noteEtudiant.findMany.mockResolvedValue([makeCreatedRow()]);
+    prisma.noteEtudiant.count.mockResolvedValue(3);
+
+    const result = await service.findAll(
+      { page: 1, limit: 2, enseignantId: 'ens-autre' },
+      TEACHER_USER,
+    );
+
+    const expectedWhere = {
+      epreuveId: undefined,
+      inscriptionId: undefined,
+      epreuve: { coursClasse: { cours: { enseignantId: 'ens-self' } } },
+    };
+    expect(prisma.noteEtudiant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expectedWhere, skip: 0, take: 2 }),
+    );
+    expect(prisma.noteEtudiant.count).toHaveBeenCalledWith({ where: expectedWhere });
+    expect(result.meta).toEqual({ total: 3, page: 1, limit: 2, totalPages: 2 });
   });
 });
 
@@ -379,7 +498,13 @@ describe('NoteEtudiantService — findOne', () => {
 
   beforeEach(() => {
     prisma = {
-      noteEtudiant: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), delete: jest.fn() },
+      noteEtudiant: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        delete: jest.fn(),
+        count: jest.fn().mockResolvedValue(1),
+      },
       epreuve: { findUnique: jest.fn() },
       inscription: { findUnique: jest.fn() },
       enseignant: { findFirst: jest.fn() },
