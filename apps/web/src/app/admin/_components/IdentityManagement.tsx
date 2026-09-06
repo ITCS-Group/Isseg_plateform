@@ -43,10 +43,20 @@ interface RoleItem {
   permissions: PermissionBasic[];
 }
 
+interface PaginatedRoles {
+  data: RoleItem[];
+  meta: PaginationMeta;
+}
+
 interface PermissionItem {
   id: string;
   nomPermission: string;
   description?: string;
+}
+
+interface PaginatedPermissions {
+  data: PermissionItem[];
+  meta: PaginationMeta;
 }
 
 type Tab = "utilisateurs" | "roles" | "permissions";
@@ -61,9 +71,13 @@ export function IdentityManagement() {
   const [utilisateursError, setUtilisateursError] = useState("");
 
   const [roles, setRoles] = useState<RoleItem[] | null>(null);
+  // Totaux issus de `meta.total` : les badges doivent afficher le nombre réel
+  // d'éléments, pas la longueur de la page courante renvoyée par le backend.
+  const [rolesTotal, setRolesTotal] = useState<number | null>(null);
   const [rolesError, setRolesError] = useState("");
 
   const [permissions, setPermissions] = useState<PermissionItem[] | null>(null);
+  const [permissionsTotal, setPermissionsTotal] = useState<number | null>(null);
   const [permissionsError, setPermissionsError] = useState("");
 
   const fetchUtilisateurs = useCallback(async () => {
@@ -83,8 +97,9 @@ export function IdentityManagement() {
   const fetchRoles = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const data = await apiFetch<RoleItem[]>("/roles", { token: accessToken });
-      setRoles(data);
+      const res = await apiFetch<PaginatedRoles>("/roles", { token: accessToken });
+      setRoles(res.data);
+      setRolesTotal(res.meta.total);
     } catch (e) {
       setRolesError(e instanceof ApiError ? e.message : "Erreur réseau");
     }
@@ -93,8 +108,9 @@ export function IdentityManagement() {
   const fetchPermissions = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const data = await apiFetch<PermissionItem[]>("/permissions", { token: accessToken });
-      setPermissions(data);
+      const res = await apiFetch<PaginatedPermissions>("/permissions", { token: accessToken });
+      setPermissions(res.data);
+      setPermissionsTotal(res.meta.total);
     } catch (e) {
       setPermissionsError(e instanceof ApiError ? e.message : "Erreur réseau");
     }
@@ -222,8 +238,8 @@ export function IdentityManagement() {
 
   const TABS: { key: Tab; label: string; badge?: number }[] = [
     { key: "utilisateurs", label: "Utilisateurs", badge: utilisateurs?.meta.total },
-    { key: "roles", label: "Rôles", badge: roles?.length },
-    { key: "permissions", label: "Permissions", badge: permissions?.length },
+    { key: "roles", label: "Rôles", badge: rolesTotal ?? undefined },
+    { key: "permissions", label: "Permissions", badge: permissionsTotal ?? undefined },
   ];
 
   return (
