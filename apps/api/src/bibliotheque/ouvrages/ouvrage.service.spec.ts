@@ -3,10 +3,20 @@ import { StatutOuvrage } from '@prisma/client';
 import { OuvrageService } from './ouvrage.service';
 
 interface PrismaMock {
-  ouvrage: { findMany: jest.Mock; findUnique: jest.Mock; create: jest.Mock; update: jest.Mock; delete: jest.Mock };
+  ouvrage: {
+    findMany: jest.Mock;
+    findUnique: jest.Mock;
+    create: jest.Mock;
+    update: jest.Mock;
+    delete: jest.Mock;
+    count: jest.Mock;
+  };
   sectionBibliotheque: { findUnique: jest.Mock };
   emprunt: { count: jest.Mock };
 }
+
+/** Pagination par défaut (cf. PaginationDto) — page 1, 20 éléments. */
+const PAGE_DEFAUT = { page: 1, limit: 20 };
 
 const SECTION = { id: 'sec-1', code: 'OG', nom: 'Ouvrages Généraux' };
 
@@ -43,6 +53,7 @@ describe('OuvrageService', () => {
         create: jest.fn().mockResolvedValue(OUVRAGE_ROW),
         update: jest.fn().mockResolvedValue(OUVRAGE_ROW),
         delete: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
       },
       sectionBibliotheque: { findUnique: jest.fn().mockResolvedValue(SECTION) },
       emprunt: { count: jest.fn().mockResolvedValue(0) },
@@ -121,6 +132,73 @@ describe('OuvrageService', () => {
     it('aucun emprunt en cours → suppression effectuée', async () => {
       await service.remove('ouv-1');
       expect(prisma.ouvrage.delete).toHaveBeenCalledWith({ where: { id: 'ouv-1' } });
+    });
+  });
+
+  // ── findAll — pagination (BACK-02-A) ────────────────────────────────────────
+  describe('findAll — pagination', () => {
+    it('page par défaut : renvoie {data, meta} avec skip=0/take=20', async () => {
+      prisma.ouvrage.findMany.mockResolvedValue([OUVRAGE_ROW]);
+      prisma.ouvrage.count.mockResolvedValue(1);
+
+      const result = await service.findAll({ ...PAGE_DEFAUT });
+
+      expect(prisma.ouvrage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+      expect(result.data).toHaveLength(1);
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('count reçoit exactement le même `where` que findMany', async () => {
+      prisma.ouvrage.findMany.mockResolvedValue([OUVRAGE_ROW]);
+      prisma.ouvrage.count.mockResolvedValue(37);
+
+      const result = await service.findAll({
+        ...PAGE_DEFAUT,
+        statut: StatutOuvrage.DISPONIBLE,
+        sectionId: 'sec-1',
+      });
+
+      const whereFindMany = prisma.ouvrage.findMany.mock.calls[0][0].where;
+      const whereCount = prisma.ouvrage.count.mock.calls[0][0].where;
+      expect(whereCount).toEqual(whereFindMany);
+      expect(result.meta.total).toBe(37);
+    });
+
+    it('dernière page partielle : skip/take corrects, totalPages arrondi au supérieur', async () => {
+      prisma.ouvrage.findMany.mockResolvedValue([OUVRAGE_ROW]);
+      prisma.ouvrage.count.mockResolvedValue(45);
+
+      const result = await service.findAll({ page: 3, limit: 20 });
+
+      expect(prisma.ouvrage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 40, take: 20 }),
+      );
+      expect(result.meta).toEqual({ total: 45, page: 3, limit: 20, totalPages: 3 });
+    });
+
+    it('collection vide : totalPages plancher à 1', async () => {
+      prisma.ouvrage.findMany.mockResolvedValue([]);
+      prisma.ouvrage.count.mockResolvedValue(0);
+
+      const result = await service.findAll({ ...PAGE_DEFAUT });
+
+      expect(result.data).toEqual([]);
+      expect(result.meta).toEqual({ total: 0, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('pagination + recherche `q` : le OR titre/auteur reste appliqué', async () => {
+      prisma.ouvrage.findMany.mockResolvedValue([OUVRAGE_ROW]);
+      prisma.ouvrage.count.mockResolvedValue(9);
+
+      const result = await service.findAll({ page: 2, limit: 5, q: 'pedagogie' });
+
+      const call = prisma.ouvrage.findMany.mock.calls[0][0];
+      expect(call.skip).toBe(5);
+      expect(call.take).toBe(5);
+      expect(JSON.stringify(call.where.OR)).toContain('pedagogie');
+      expect(result.meta).toEqual({ total: 9, page: 2, limit: 5, totalPages: 2 });
     });
   });
 });

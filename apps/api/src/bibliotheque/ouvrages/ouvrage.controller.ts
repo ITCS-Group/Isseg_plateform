@@ -22,7 +22,7 @@ import {
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateOuvrageDto } from './dto/create-ouvrage.dto';
 import { ListOuvrageQueryDto } from './dto/list-ouvrage-query.dto';
-import { OuvrageResponseDto } from './dto/ouvrage.response.dto';
+import { OuvrageResponseDto, PaginatedOuvrageResponseDto } from './dto/ouvrage.response.dto';
 import { UpdateOuvrageDto } from './dto/update-ouvrage.dto';
 import { OuvrageService } from './ouvrage.service';
 
@@ -39,8 +39,8 @@ export class OuvrageController {
 
   @Get()
   @ApiOperation({ summary: 'Rechercher/lister le catalogue des ouvrages' })
-  @ApiResponse({ status: 200, type: [OuvrageResponseDto] })
-  findAll(@Query() query: ListOuvrageQueryDto): Promise<OuvrageResponseDto[]> {
+  @ApiResponse({ status: 200, type: PaginatedOuvrageResponseDto })
+  findAll(@Query() query: ListOuvrageQueryDto): Promise<PaginatedOuvrageResponseDto> {
     return this.ouvrageService.findAll(query);
   }
 

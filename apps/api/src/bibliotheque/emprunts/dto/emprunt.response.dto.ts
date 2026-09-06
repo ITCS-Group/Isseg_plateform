@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { StatutEmprunt } from '@prisma/client';
+import { PaginationMetaDto } from '../../../common/dto/pagination.dto';
 
 export class EmpruntResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -49,4 +50,12 @@ export class EmpruntResponseDto {
 
   @ApiProperty()
   updatedAt: Date;
+}
+
+export class PaginatedEmpruntResponseDto {
+  @ApiProperty({ type: [EmpruntResponseDto] })
+  data: EmpruntResponseDto[];
+
+  @ApiProperty({ type: PaginationMetaDto })
+  meta: PaginationMetaDto;
 }

@@ -7,6 +7,9 @@ import { EpreuveService } from './epreuve.service';
 let seq = 0;
 const uid = (p: string) => `${p}-${Date.now()}-${seq++}`;
 
+/** Pagination par défaut (cf. PaginationDto) — page 1, 20 éléments. */
+const PAGE_DEFAUT = { page: 1, limit: 20 };
+
 let prisma: PrismaClient;
 let service: EpreuveService;
 
@@ -144,9 +147,10 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
       await service.create({ coursClasseId: cc1.id, type: TypeEpreuve.CC });
       await service.create({ coursClasseId: cc2.id, type: TypeEpreuve.EXAMEN });
 
-      const result = await service.findAll({});
+      const result = await service.findAll({ ...PAGE_DEFAUT });
 
-      expect(result).toHaveLength(2);
+      expect(result.data).toHaveLength(2);
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
     });
 
     it('B2 — filtre coursClasseId', async () => {
@@ -155,10 +159,11 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
       const e1 = await service.create({ coursClasseId: cc1.id, type: TypeEpreuve.CC });
       await service.create({ coursClasseId: cc2.id, type: TypeEpreuve.CC });
 
-      const result = await service.findAll({ coursClasseId: cc1.id });
+      const result = await service.findAll({ ...PAGE_DEFAUT, coursClasseId: cc1.id });
 
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe(e1.id);
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe(e1.id);
+      expect(result.meta.total).toBe(1);
     });
 
     it('B3 — filtre type', async () => {
@@ -166,10 +171,11 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
       await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC });
       const tp = await service.create({ coursClasseId: cc.id, type: TypeEpreuve.TP });
 
-      const result = await service.findAll({ type: TypeEpreuve.TP });
+      const result = await service.findAll({ ...PAGE_DEFAUT, type: TypeEpreuve.TP });
 
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe(tp.id);
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe(tp.id);
+      expect(result.meta.total).toBe(1);
     });
 
     it('B4 — combinaison coursClasseId + type', async () => {
@@ -179,10 +185,68 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
       await service.create({ coursClasseId: cc1.id, type: TypeEpreuve.CC });
       await service.create({ coursClasseId: cc2.id, type: TypeEpreuve.EXAMEN });
 
-      const result = await service.findAll({ coursClasseId: cc1.id, type: TypeEpreuve.EXAMEN });
+      const result = await service.findAll({
+        ...PAGE_DEFAUT,
+        coursClasseId: cc1.id,
+        type: TypeEpreuve.EXAMEN,
+      });
 
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe(target.id);
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe(target.id);
+      expect(result.meta.total).toBe(1);
+    });
+
+    // ── Pagination (BACK-02-A) ──────────────────────────────────────────────
+
+    it('B5 — page par défaut : meta cohérent avec le nombre réel d’enregistrements', async () => {
+      const cc = await makeCoursClasse();
+      for (let i = 0; i < 3; i += 1) {
+        await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC });
+      }
+
+      const result = await service.findAll({ ...PAGE_DEFAUT });
+
+      expect(result.data).toHaveLength(3);
+      expect(result.meta).toEqual({ total: 3, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('B6 — dernière page partielle : reste des éléments, sans doublon', async () => {
+      const cc = await makeCoursClasse();
+      for (let i = 0; i < 5; i += 1) {
+        await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC });
+      }
+
+      const page1 = await service.findAll({ page: 1, limit: 2 });
+      const page3 = await service.findAll({ page: 3, limit: 2 });
+
+      expect(page1.data).toHaveLength(2);
+      expect(page3.data).toHaveLength(1); // 5 = 2 + 2 + 1
+      expect(page3.meta).toEqual({ total: 5, page: 3, limit: 2, totalPages: 3 });
+
+      const idsPage1 = page1.data.map((e) => e.id);
+      expect(idsPage1).not.toContain(page3.data[0].id);
+    });
+
+    it('B7 — page au-delà du dernier index : data vide, meta.total inchangé', async () => {
+      const cc = await makeCoursClasse();
+      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC });
+
+      const result = await service.findAll({ page: 5, limit: 20 });
+
+      expect(result.data).toEqual([]);
+      expect(result.meta.total).toBe(1);
+    });
+
+    it('B8 — pagination + filtre : meta.total ne compte que les lignes filtrées', async () => {
+      const cc = await makeCoursClasse();
+      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.TP });
+      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.TP });
+      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.EXAMEN });
+
+      const result = await service.findAll({ page: 1, limit: 1, type: TypeEpreuve.TP });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 1, totalPages: 2 });
     });
   });
 

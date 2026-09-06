@@ -2,11 +2,12 @@ import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundExce
 import { ConfigService } from '@nestjs/config';
 import { Prisma, StatutEmprunt, StatutOuvrage } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { RegularityService } from '../../scolarite/regularity/regularity.service';
 import { TYPE_ABONNE_RULES } from '../common/loan-rules.constants';
 import { CreateEmpruntDto } from './dto/create-emprunt.dto';
-import { EmpruntResponseDto } from './dto/emprunt.response.dto';
+import { EmpruntResponseDto, PaginatedEmpruntResponseDto } from './dto/emprunt.response.dto';
 import { ListEmpruntQueryDto } from './dto/list-emprunt-query.dto';
 
 /** Rôles qui voient tous les emprunts, sans restriction à leurs propres emprunts. */
@@ -51,16 +52,30 @@ export class EmpruntService {
   async findAll(
     query: ListEmpruntQueryDto,
     user: Pick<AuthenticatedUser, 'id' | 'roles'>,
-  ): Promise<EmpruntResponseDto[]> {
+  ): Promise<PaginatedEmpruntResponseDto> {
     const isUnscoped = user.roles.some((role) => UNSCOPED_ROLES.includes(role));
     const emprunteurId = isUnscoped ? query.emprunteurId : user.id;
 
-    const rows = await this.prisma.emprunt.findMany({
-      where: { emprunteurId, statut: query.statut },
-      select: EMPRUNT_SELECT,
-      orderBy: { dateEmprunt: 'desc' },
-    });
-    return rows.map(this.toDto);
+    const where: Prisma.EmpruntWhereInput = { emprunteurId, statut: query.statut };
+
+    const [rows, total] = await Promise.all([
+      this.prisma.emprunt.findMany({
+        where,
+        select: EMPRUNT_SELECT,
+        orderBy: { dateEmprunt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.emprunt.count({ where }),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data: rows.map(this.toDto), meta };
   }
 
   // ── Création (emprunt) ───────────────────────────────────────────────────

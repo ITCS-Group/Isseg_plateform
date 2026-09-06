@@ -4,13 +4,22 @@ import { EpreuveService } from './epreuve.service';
 
 // ── Mock Prisma ───────────────────────────────────────────────────────────────
 interface PrismaMock {
-  epreuve: { findMany: jest.Mock; findUnique: jest.Mock; create: jest.Mock; delete: jest.Mock };
+  epreuve: {
+    findMany: jest.Mock;
+    findUnique: jest.Mock;
+    create: jest.Mock;
+    delete: jest.Mock;
+    count: jest.Mock;
+  };
   coursClasse: { findUnique: jest.Mock };
   noteEtudiant: { count: jest.Mock };
 }
 
 const COURS_CLASSE_ID = 'cc-1';
 const EPREUVE_ID = 'ep-1';
+
+/** Pagination par défaut (cf. PaginationDto) — évite de la répéter dans chaque appel. */
+const PAGE_DEFAUT = { page: 1, limit: 20 };
 
 function makeRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -38,7 +47,13 @@ describe('EpreuveService', () => {
 
   beforeEach(() => {
     prisma = {
-      epreuve: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), delete: jest.fn() },
+      epreuve: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        delete: jest.fn(),
+        count: jest.fn().mockResolvedValue(1),
+      },
       coursClasse: { findUnique: jest.fn() },
       noteEtudiant: { count: jest.fn() },
     };
@@ -97,18 +112,18 @@ describe('EpreuveService', () => {
     it('sans filtre', async () => {
       prisma.epreuve.findMany.mockResolvedValue([makeRow()]);
 
-      const result = await service.findAll({});
+      const result = await service.findAll({ ...PAGE_DEFAUT });
 
       expect(prisma.epreuve.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { coursClasseId: undefined, type: undefined } }),
       );
-      expect(result).toHaveLength(1);
+      expect(result.data).toHaveLength(1);
     });
 
     it('filtre par coursClasseId', async () => {
       prisma.epreuve.findMany.mockResolvedValue([makeRow()]);
 
-      await service.findAll({ coursClasseId: COURS_CLASSE_ID });
+      await service.findAll({ ...PAGE_DEFAUT, coursClasseId: COURS_CLASSE_ID });
 
       expect(prisma.epreuve.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { coursClasseId: COURS_CLASSE_ID, type: undefined } }),
@@ -118,7 +133,7 @@ describe('EpreuveService', () => {
     it('filtre par type', async () => {
       prisma.epreuve.findMany.mockResolvedValue([makeRow()]);
 
-      await service.findAll({ type: TypeEpreuve.TP });
+      await service.findAll({ ...PAGE_DEFAUT, type: TypeEpreuve.TP });
 
       expect(prisma.epreuve.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { coursClasseId: undefined, type: TypeEpreuve.TP } }),
@@ -128,13 +143,86 @@ describe('EpreuveService', () => {
     it('combine coursClasseId et type', async () => {
       prisma.epreuve.findMany.mockResolvedValue([makeRow()]);
 
-      await service.findAll({ coursClasseId: COURS_CLASSE_ID, type: TypeEpreuve.EXAMEN });
+      await service.findAll({
+        ...PAGE_DEFAUT,
+        coursClasseId: COURS_CLASSE_ID,
+        type: TypeEpreuve.EXAMEN,
+      });
 
       expect(prisma.epreuve.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { coursClasseId: COURS_CLASSE_ID, type: TypeEpreuve.EXAMEN },
         }),
       );
+    });
+
+    // ── Pagination ──────────────────────────────────────────────────────────
+
+    it('page par défaut : renvoie {data, meta} avec skip=0/take=20', async () => {
+      prisma.epreuve.findMany.mockResolvedValue([makeRow()]);
+      prisma.epreuve.count.mockResolvedValue(1);
+
+      const result = await service.findAll({ ...PAGE_DEFAUT });
+
+      expect(prisma.epreuve.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('meta.total reflète le comptage réel filtré (count reçoit le même where)', async () => {
+      prisma.epreuve.findMany.mockResolvedValue([makeRow()]);
+      prisma.epreuve.count.mockResolvedValue(42);
+
+      const result = await service.findAll({ ...PAGE_DEFAUT, type: TypeEpreuve.TP });
+
+      expect(prisma.epreuve.count).toHaveBeenCalledWith({
+        where: { coursClasseId: undefined, type: TypeEpreuve.TP },
+      });
+      expect(result.meta.total).toBe(42);
+    });
+
+    it('dernière page partielle : skip/take corrects et totalPages arrondi au supérieur', async () => {
+      prisma.epreuve.findMany.mockResolvedValue([makeRow()]);
+      prisma.epreuve.count.mockResolvedValue(41);
+
+      const result = await service.findAll({ page: 3, limit: 20 });
+
+      expect(prisma.epreuve.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 40, take: 20 }),
+      );
+      expect(result.meta).toEqual({ total: 41, page: 3, limit: 20, totalPages: 3 });
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('collection vide : totalPages plancher à 1', async () => {
+      prisma.epreuve.findMany.mockResolvedValue([]);
+      prisma.epreuve.count.mockResolvedValue(0);
+
+      const result = await service.findAll({ ...PAGE_DEFAUT });
+
+      expect(result.data).toEqual([]);
+      expect(result.meta).toEqual({ total: 0, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('pagination + filtre existant combinés', async () => {
+      prisma.epreuve.findMany.mockResolvedValue([makeRow()]);
+      prisma.epreuve.count.mockResolvedValue(7);
+
+      const result = await service.findAll({
+        page: 2,
+        limit: 5,
+        coursClasseId: COURS_CLASSE_ID,
+      });
+
+      expect(prisma.epreuve.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { coursClasseId: COURS_CLASSE_ID, type: undefined },
+          skip: 5,
+          take: 5,
+        }),
+      );
+      expect(result.meta).toEqual({ total: 7, page: 2, limit: 5, totalPages: 2 });
     });
   });
 

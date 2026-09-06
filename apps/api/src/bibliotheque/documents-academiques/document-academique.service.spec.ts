@@ -5,8 +5,17 @@ import { DocumentAcademiqueService } from './document-academique.service';
 interface PrismaMock {
   etudiant: { findUnique: jest.Mock };
   enseignant: { findUnique: jest.Mock };
-  documentAcademique: { findMany: jest.Mock; findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
+  documentAcademique: {
+    findMany: jest.Mock;
+    findUnique: jest.Mock;
+    create: jest.Mock;
+    update: jest.Mock;
+    count: jest.Mock;
+  };
 }
+
+/** Pagination par défaut (cf. PaginationDto) — page 1, 20 éléments. */
+const PAGE_DEFAUT = { page: 1, limit: 20 };
 
 const DOC_ROW = {
   id: 'doc-1',
@@ -42,6 +51,7 @@ describe('DocumentAcademiqueService', () => {
         findUnique: jest.fn().mockResolvedValue(DOC_ROW),
         create: jest.fn().mockResolvedValue(DOC_ROW),
         update: jest.fn().mockResolvedValue(DOC_ROW),
+        count: jest.fn().mockResolvedValue(0),
       },
     };
     service = new DocumentAcademiqueService(prisma as never);
@@ -86,7 +96,7 @@ describe('DocumentAcademiqueService', () => {
 
   describe('findAll — visibilité', () => {
     it('rôle privilégié (RESPONSABLE_NUMERISATION) : pas de filtre de visibilité, `q` toujours appliqué', async () => {
-      await service.findAll({ q: 'education' }, { roles: ['RESPONSABLE_NUMERISATION'] });
+      await service.findAll({ ...PAGE_DEFAUT, q: 'education' }, { roles: ['RESPONSABLE_NUMERISATION'] });
 
       const where = prisma.documentAcademique.findMany.mock.calls[0][0].where;
       // 1 seul filtre AND : le `q`, pas de filtre diffusionAutorisee
@@ -95,13 +105,84 @@ describe('DocumentAcademiqueService', () => {
     });
 
     it('rôle non privilégié (ETUDIANT) + `q` : les deux filtres OR coexistent (pas d’écrasement)', async () => {
-      await service.findAll({ q: 'education' }, { roles: ['ETUDIANT'] });
+      await service.findAll({ ...PAGE_DEFAUT, q: 'education' }, { roles: ['ETUDIANT'] });
 
       const where = prisma.documentAcademique.findMany.mock.calls[0][0].where;
       expect(where.AND).toHaveLength(2);
       const serialized = JSON.stringify(where.AND);
       expect(serialized).toContain('education');
       expect(serialized).toContain('diffusionAutorisee');
+    });
+  });
+
+  // ── findAll — pagination (BACK-02-A) ────────────────────────────────────────
+  describe('findAll — pagination', () => {
+    const ADMIN = { roles: ['ADMIN'] };
+
+    it('page par défaut : renvoie {data, meta} avec skip=0/take=20', async () => {
+      prisma.documentAcademique.findMany.mockResolvedValue([DOC_ROW]);
+      prisma.documentAcademique.count.mockResolvedValue(1);
+
+      const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN);
+
+      expect(prisma.documentAcademique.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+      expect(result.data).toHaveLength(1);
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('count reçoit exactement le même `where` que findMany (total cohérent avec les filtres)', async () => {
+      prisma.documentAcademique.findMany.mockResolvedValue([DOC_ROW]);
+      prisma.documentAcademique.count.mockResolvedValue(12);
+
+      const result = await service.findAll(
+        { ...PAGE_DEFAUT, type: TypeDocumentAcademique.THESE },
+        { roles: ['ETUDIANT'] },
+      );
+
+      const whereFindMany = prisma.documentAcademique.findMany.mock.calls[0][0].where;
+      const whereCount = prisma.documentAcademique.count.mock.calls[0][0].where;
+      expect(whereCount).toEqual(whereFindMany);
+      expect(result.meta.total).toBe(12);
+    });
+
+    it('dernière page partielle : skip/take corrects, totalPages arrondi au supérieur', async () => {
+      prisma.documentAcademique.findMany.mockResolvedValue([DOC_ROW]);
+      prisma.documentAcademique.count.mockResolvedValue(25);
+
+      const result = await service.findAll({ page: 2, limit: 20 }, ADMIN);
+
+      expect(prisma.documentAcademique.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 20 }),
+      );
+      expect(result.meta).toEqual({ total: 25, page: 2, limit: 20, totalPages: 2 });
+    });
+
+    it('collection vide : totalPages plancher à 1', async () => {
+      prisma.documentAcademique.findMany.mockResolvedValue([]);
+      prisma.documentAcademique.count.mockResolvedValue(0);
+
+      const result = await service.findAll({ ...PAGE_DEFAUT }, ADMIN);
+
+      expect(result.data).toEqual([]);
+      expect(result.meta).toEqual({ total: 0, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('pagination + filtre `q`, filtre de visibilité toujours appliqué pour un non privilégié', async () => {
+      prisma.documentAcademique.findMany.mockResolvedValue([DOC_ROW]);
+      prisma.documentAcademique.count.mockResolvedValue(3);
+
+      const result = await service.findAll(
+        { page: 2, limit: 2, q: 'education' },
+        { roles: ['ETUDIANT'] },
+      );
+
+      const call = prisma.documentAcademique.findMany.mock.calls[0][0];
+      expect(call.skip).toBe(2);
+      expect(call.take).toBe(2);
+      expect(call.where.AND).toHaveLength(2); // `q` + visibilité
+      expect(result.meta).toEqual({ total: 3, page: 2, limit: 2, totalPages: 2 });
     });
   });
 

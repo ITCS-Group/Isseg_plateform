@@ -1,9 +1,10 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, StatutValidation } from '@prisma/client';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateEpreuveDto } from './dto/create-epreuve.dto';
 import { ListEpreuveQueryDto } from './dto/list-epreuve-query.dto';
-import { EpreuveResponseDto } from './dto/epreuve.response.dto';
+import { EpreuveResponseDto, PaginatedEpreuveResponseDto } from './dto/epreuve.response.dto';
 
 const EPREUVE_SELECT = {
   id: true,
@@ -23,16 +24,30 @@ export class EpreuveService {
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
-  async findAll(query: ListEpreuveQueryDto): Promise<EpreuveResponseDto[]> {
-    const rows = await this.prisma.epreuve.findMany({
-      where: {
-        coursClasseId: query.coursClasseId,
-        type: query.type,
-      },
-      select: EPREUVE_SELECT,
-      orderBy: { createdAt: 'desc' },
-    });
-    return rows.map(this.toDto);
+  async findAll(query: ListEpreuveQueryDto): Promise<PaginatedEpreuveResponseDto> {
+    const where: Prisma.EpreuveWhereInput = {
+      coursClasseId: query.coursClasseId,
+      type: query.type,
+    };
+
+    const [rows, total] = await Promise.all([
+      this.prisma.epreuve.findMany({
+        where,
+        select: EPREUVE_SELECT,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.epreuve.count({ where }),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data: rows.map(this.toDto), meta };
   }
 
   async findOne(id: string): Promise<EpreuveResponseDto> {

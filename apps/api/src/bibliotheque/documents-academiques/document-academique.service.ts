@@ -1,9 +1,13 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateDocumentAcademiqueDto } from './dto/create-document-academique.dto';
-import { DocumentAcademiqueResponseDto } from './dto/document-academique.response.dto';
+import {
+  DocumentAcademiqueResponseDto,
+  PaginatedDocumentAcademiqueResponseDto,
+} from './dto/document-academique.response.dto';
 import { ListDocumentAcademiqueQueryDto } from './dto/list-document-academique-query.dto';
 import { UpdateDocumentAcademiqueDto } from './dto/update-document-academique.dto';
 
@@ -44,7 +48,7 @@ export class DocumentAcademiqueService {
   async findAll(
     query: ListDocumentAcademiqueQueryDto,
     user: Pick<AuthenticatedUser, 'roles'>,
-  ): Promise<DocumentAcademiqueResponseDto[]> {
+  ): Promise<PaginatedDocumentAcademiqueResponseDto> {
     const isPrivileged = user.roles.some((role) => PRIVILEGED_ROLES.includes(role));
 
     // AND d'un tableau de filtres indépendants : `q` et la visibilité utilisent
@@ -59,12 +63,26 @@ export class DocumentAcademiqueService {
     }
     if (!isPrivileged) filters.push(this.visibilityFilter());
 
-    const rows = await this.prisma.documentAcademique.findMany({
-      where: { AND: filters },
-      select: DOCUMENT_SELECT,
-      orderBy: { createdAt: 'desc' },
-    });
-    return rows.map(this.toDto);
+    const where: Prisma.DocumentAcademiqueWhereInput = { AND: filters };
+
+    const [rows, total] = await Promise.all([
+      this.prisma.documentAcademique.findMany({
+        where,
+        select: DOCUMENT_SELECT,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.documentAcademique.count({ where }),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data: rows.map(this.toDto), meta };
   }
 
   async findOne(id: string, user: Pick<AuthenticatedUser, 'roles'>): Promise<DocumentAcademiqueResponseDto> {
