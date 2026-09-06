@@ -1,9 +1,11 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { TYPE_ABONNE_RULES } from '../common/loan-rules.constants';
-import { AbonneResponseDto } from './dto/abonne.response.dto';
+import { AbonneResponseDto, PaginatedAbonneResponseDto } from './dto/abonne.response.dto';
 import { CreateAbonneDto } from './dto/create-abonne.dto';
+import { ListAbonneQueryDto } from './dto/list-abonne-query.dto';
 
 const ABONNE_SELECT = {
   id: true,
@@ -33,12 +35,24 @@ export class AbonneService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(): Promise<AbonneResponseDto[]> {
-    const rows = await this.prisma.abonne.findMany({
-      select: ABONNE_SELECT,
-      orderBy: { createdAt: 'desc' },
-    });
-    return rows.map(this.toDto);
+  async findAll(query: ListAbonneQueryDto): Promise<PaginatedAbonneResponseDto> {
+    const [rows, total] = await Promise.all([
+      this.prisma.abonne.findMany({
+        select: ABONNE_SELECT,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.abonne.count(),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data: rows.map(this.toDto), meta };
   }
 
   async create(dto: CreateAbonneDto): Promise<AbonneResponseDto> {

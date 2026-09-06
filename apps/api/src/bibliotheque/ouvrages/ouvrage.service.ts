@@ -1,9 +1,10 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateOuvrageDto } from './dto/create-ouvrage.dto';
 import { ListOuvrageQueryDto } from './dto/list-ouvrage-query.dto';
-import { OuvrageResponseDto } from './dto/ouvrage.response.dto';
+import { OuvrageResponseDto, PaginatedOuvrageResponseDto } from './dto/ouvrage.response.dto';
 import { UpdateOuvrageDto } from './dto/update-ouvrage.dto';
 
 const OUVRAGE_SELECT = {
@@ -37,24 +38,38 @@ export class OuvrageService {
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
-  async findAll(query: ListOuvrageQueryDto): Promise<OuvrageResponseDto[]> {
-    const rows = await this.prisma.ouvrage.findMany({
-      where: {
-        sectionId: query.sectionId,
-        statut: query.statut,
-        ...(query.q
-          ? {
-              OR: [
-                { titre: { contains: query.q, mode: 'insensitive' } },
-                { auteur: { contains: query.q, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      select: OUVRAGE_SELECT,
-      orderBy: { titre: 'asc' },
-    });
-    return rows.map(this.toDto);
+  async findAll(query: ListOuvrageQueryDto): Promise<PaginatedOuvrageResponseDto> {
+    const where: Prisma.OuvrageWhereInput = {
+      sectionId: query.sectionId,
+      statut: query.statut,
+      ...(query.q
+        ? {
+            OR: [
+              { titre: { contains: query.q, mode: 'insensitive' } },
+              { auteur: { contains: query.q, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const [rows, total] = await Promise.all([
+      this.prisma.ouvrage.findMany({
+        where,
+        select: OUVRAGE_SELECT,
+        orderBy: { titre: 'asc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.ouvrage.count({ where }),
+    ]);
+
+    const meta: PaginationMetaDto = {
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
+    return { data: rows.map(this.toDto), meta };
   }
 
   async findOne(id: string): Promise<OuvrageResponseDto> {

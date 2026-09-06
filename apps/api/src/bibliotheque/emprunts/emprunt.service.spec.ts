@@ -30,6 +30,9 @@ const ABONNE = {
   dureePretJours: 30,
 };
 
+/** Pagination par défaut (cf. PaginationDto) — page 1, 20 éléments. */
+const PAGE_DEFAUT = { page: 1, limit: 20 };
+
 const EMPRUNT_ROW = {
   id: 'emp-1',
   ouvrageId: 'ouv-1',
@@ -278,7 +281,7 @@ describe('EmpruntService', () => {
     it('ETUDIANT : emprunteurId forcé à son propre id, filtre query ignoré', async () => {
       prisma.emprunt.findMany = jest.fn().mockResolvedValue([]);
       await service.findAll(
-        { emprunteurId: 'autre-utilisateur' },
+        { ...PAGE_DEFAUT, emprunteurId: 'autre-utilisateur' },
         { id: 'user-1', roles: ['ETUDIANT'] },
       );
 
@@ -290,13 +293,87 @@ describe('EmpruntService', () => {
     it('BIBLIOTHECAIRE : filtre query respecté (non forcé)', async () => {
       prisma.emprunt.findMany = jest.fn().mockResolvedValue([]);
       await service.findAll(
-        { emprunteurId: 'autre-utilisateur' },
+        { ...PAGE_DEFAUT, emprunteurId: 'autre-utilisateur' },
         { id: 'bib-1', roles: ['BIBLIOTHECAIRE'] },
       );
 
       expect(prisma.emprunt.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ emprunteurId: 'autre-utilisateur' }) }),
       );
+    });
+  });
+
+  // ── findAll — pagination (BACK-02-A) ────────────────────────────────────────
+  describe('findAll — pagination', () => {
+    const BIB = { id: 'bib-1', roles: ['BIBLIOTHECAIRE'] };
+
+    it('page par défaut : renvoie {data, meta} avec skip=0/take=20', async () => {
+      prisma.emprunt.findMany.mockResolvedValue([EMPRUNT_ROW]);
+      prisma.emprunt.count.mockResolvedValue(1);
+
+      const result = await service.findAll({ ...PAGE_DEFAUT }, BIB);
+
+      expect(prisma.emprunt.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+      expect(result.data).toHaveLength(1);
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('meta.total vient du count filtré (même where que findMany)', async () => {
+      prisma.emprunt.findMany.mockResolvedValue([EMPRUNT_ROW]);
+      prisma.emprunt.count.mockResolvedValue(33);
+
+      const result = await service.findAll(
+        { ...PAGE_DEFAUT, statut: StatutEmprunt.EN_COURS },
+        BIB,
+      );
+
+      expect(prisma.emprunt.count).toHaveBeenCalledWith({
+        where: { emprunteurId: undefined, statut: StatutEmprunt.EN_COURS },
+      });
+      expect(result.meta.total).toBe(33);
+    });
+
+    it('dernière page partielle : skip/take corrects, totalPages arrondi au supérieur', async () => {
+      prisma.emprunt.findMany.mockResolvedValue([EMPRUNT_ROW]);
+      prisma.emprunt.count.mockResolvedValue(21);
+
+      const result = await service.findAll({ page: 2, limit: 20 }, BIB);
+
+      expect(prisma.emprunt.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 20 }),
+      );
+      expect(result.meta).toEqual({ total: 21, page: 2, limit: 20, totalPages: 2 });
+    });
+
+    it('collection vide : totalPages plancher à 1', async () => {
+      prisma.emprunt.findMany.mockResolvedValue([]);
+      prisma.emprunt.count.mockResolvedValue(0);
+
+      const result = await service.findAll({ ...PAGE_DEFAUT }, BIB);
+
+      expect(result.data).toEqual([]);
+      expect(result.meta).toEqual({ total: 0, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('pagination + filtre statut, scoping ETUDIANT toujours appliqué', async () => {
+      prisma.emprunt.findMany.mockResolvedValue([EMPRUNT_ROW]);
+      prisma.emprunt.count.mockResolvedValue(4);
+
+      const result = await service.findAll(
+        { page: 2, limit: 2, statut: StatutEmprunt.EN_RETARD, emprunteurId: 'autre' },
+        { id: 'user-1', roles: ['ETUDIANT'] },
+      );
+
+      expect(prisma.emprunt.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { emprunteurId: 'user-1', statut: StatutEmprunt.EN_RETARD },
+          skip: 2,
+          take: 2,
+        }),
+      );
+      expect(result.meta).toEqual({ total: 4, page: 2, limit: 2, totalPages: 2 });
     });
   });
 });

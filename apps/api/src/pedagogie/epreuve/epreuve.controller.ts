@@ -22,7 +22,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { EpreuveService } from './epreuve.service';
 import { CreateEpreuveDto } from './dto/create-epreuve.dto';
 import { ListEpreuveQueryDto } from './dto/list-epreuve-query.dto';
-import { EpreuveResponseDto } from './dto/epreuve.response.dto';
+import { EpreuveResponseDto, PaginatedEpreuveResponseDto } from './dto/epreuve.response.dto';
 
 @ApiTags('Pédagogie — Épreuves')
 @ApiBearerAuth('JWT')
@@ -36,8 +36,8 @@ export class EpreuveController {
   @Get()
   @Roles('ADMIN', 'DGA_ETUDES', 'CHEF_DEPARTEMENT', 'ENSEIGNANT')
   @ApiOperation({ summary: 'Lister les épreuves, filtrables par cours/classe et/ou type' })
-  @ApiResponse({ status: 200, type: [EpreuveResponseDto] })
-  findAll(@Query() query: ListEpreuveQueryDto): Promise<EpreuveResponseDto[]> {
+  @ApiResponse({ status: 200, type: PaginatedEpreuveResponseDto })
+  findAll(@Query() query: ListEpreuveQueryDto): Promise<PaginatedEpreuveResponseDto> {
     return this.epreuveService.findAll(query);
   }
 

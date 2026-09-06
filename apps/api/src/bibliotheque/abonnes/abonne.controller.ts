@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AbonneService } from './abonne.service';
-import { AbonneResponseDto } from './dto/abonne.response.dto';
+import { AbonneResponseDto, PaginatedAbonneResponseDto } from './dto/abonne.response.dto';
 import { CreateAbonneDto } from './dto/create-abonne.dto';
+import { ListAbonneQueryDto } from './dto/list-abonne-query.dto';
 
 const MANAGE_ROLES = ['ADMIN', 'BIBLIOTHECAIRE', 'RESPONSABLE_BIBLIOTHEQUE'];
 
@@ -18,9 +19,9 @@ export class AbonneController {
 
   @Get()
   @ApiOperation({ summary: 'Lister les abonnés' })
-  @ApiResponse({ status: 200, type: [AbonneResponseDto] })
-  findAll(): Promise<AbonneResponseDto[]> {
-    return this.abonneService.findAll();
+  @ApiResponse({ status: 200, type: PaginatedAbonneResponseDto })
+  findAll(@Query() query: ListAbonneQueryDto): Promise<PaginatedAbonneResponseDto> {
+    return this.abonneService.findAll(query);
   }
 
   // ── POST /api/v1/abonnes ──────────────────────────────────────────────────

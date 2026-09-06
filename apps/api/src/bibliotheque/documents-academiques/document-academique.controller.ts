@@ -4,7 +4,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import { CreateDocumentAcademiqueDto } from './dto/create-document-academique.dto';
-import { DocumentAcademiqueResponseDto } from './dto/document-academique.response.dto';
+import {
+  DocumentAcademiqueResponseDto,
+  PaginatedDocumentAcademiqueResponseDto,
+} from './dto/document-academique.response.dto';
 import { ListDocumentAcademiqueQueryDto } from './dto/list-document-academique-query.dto';
 import { UpdateDocumentAcademiqueDto } from './dto/update-document-academique.dto';
 import { DocumentAcademiqueService } from './document-academique.service';
@@ -26,11 +29,11 @@ export class DocumentAcademiqueController {
     description:
       'ETUDIANT/ENSEIGNANT ne voient que les documents à diffusion autorisée et hors embargo.',
   })
-  @ApiResponse({ status: 200, type: [DocumentAcademiqueResponseDto] })
+  @ApiResponse({ status: 200, type: PaginatedDocumentAcademiqueResponseDto })
   findAll(
     @Query() query: ListDocumentAcademiqueQueryDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<DocumentAcademiqueResponseDto[]> {
+  ): Promise<PaginatedDocumentAcademiqueResponseDto> {
     return this.documentAcademiqueService.findAll(query, user);
   }
 

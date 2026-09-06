@@ -265,4 +265,92 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     const retour = await service.retour(emprunt.id);
     expect(retour.retardJours).toBeGreaterThanOrEqual(5);
   });
+
+  // ── findAll — pagination (BACK-02-A) ────────────────────────────────────────
+  describe('findAll — pagination', () => {
+    const BIB = { id: 'bib-1', roles: ['BIBLIOTHECAIRE'] };
+
+    /** Crée `n` emprunts pour un même enseignant (quota 10, donc n <= 10). */
+    async function seedEmprunts(n: number) {
+      const service = makeService();
+      const section = await makeSection();
+      const { user } = await makeEnseignantAbonne();
+      for (let i = 0; i < n; i += 1) {
+        const ouvrage = await makeOuvrage(section.id, 1);
+        await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
+      }
+      return { service, user };
+    }
+
+    it('page par défaut : meta cohérent avec le nombre réel d’emprunts', async () => {
+      const { service } = await seedEmprunts(3);
+
+      const result = await service.findAll({ page: 1, limit: 20 }, BIB);
+
+      expect(result.data).toHaveLength(3);
+      expect(result.meta).toEqual({ total: 3, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('dernière page partielle : reste des éléments, sans doublon entre les pages', async () => {
+      const { service } = await seedEmprunts(5);
+
+      const page1 = await service.findAll({ page: 1, limit: 2 }, BIB);
+      const page3 = await service.findAll({ page: 3, limit: 2 }, BIB);
+
+      expect(page1.data).toHaveLength(2);
+      expect(page3.data).toHaveLength(1); // 5 = 2 + 2 + 1
+      expect(page3.meta).toEqual({ total: 5, page: 3, limit: 2, totalPages: 3 });
+      expect(page1.data.map((e) => e.id)).not.toContain(page3.data[0].id);
+    });
+
+    it('page au-delà du dernier index : data vide, meta.total inchangé', async () => {
+      const { service } = await seedEmprunts(2);
+
+      const result = await service.findAll({ page: 9, limit: 20 }, BIB);
+
+      expect(result.data).toEqual([]);
+      expect(result.meta.total).toBe(2);
+    });
+
+    it('pagination + filtre statut : meta.total ne compte que les lignes filtrées', async () => {
+      const { service } = await seedEmprunts(3);
+      const tous = await service.findAll({ page: 1, limit: 20 }, BIB);
+      await service.retour(tous.data[0].id); // 1 RETOURNE, 2 EN_COURS
+
+      const enCours = await service.findAll(
+        { page: 1, limit: 20, statut: StatutEmprunt.EN_COURS },
+        BIB,
+      );
+
+      expect(enCours.meta.total).toBe(2);
+      expect(enCours.data).toHaveLength(2);
+    });
+
+    it('scoping ETUDIANT préservé : meta.total ne compte que ses propres emprunts', async () => {
+      const service = makeService(['ENSEIGNANT', 'ETUDIANT_L1_L2']);
+      const section = await makeSection();
+
+      const { user: ens } = await makeEnseignantAbonne();
+      const ouvrageEns = await makeOuvrage(section.id, 1);
+      await service.create({ ouvrageId: ouvrageEns.id, emprunteurId: ens.id });
+
+      const { user: etu } = await makeEtudiantAbonne();
+      const ouvrageEtu = await makeOuvrage(section.id, 1);
+      await service.create({ ouvrageId: ouvrageEtu.id, emprunteurId: etu.id });
+
+      // L'étudiant demande « tous » les emprunts : scoping forcé sur les siens.
+      const vueEtudiant = await service.findAll(
+        { page: 1, limit: 20, emprunteurId: ens.id },
+        { id: etu.id, roles: ['ETUDIANT'] },
+      );
+
+      expect(vueEtudiant.meta.total).toBe(1);
+      expect(vueEtudiant.data).toHaveLength(1);
+      expect(vueEtudiant.data[0].emprunteurId).toBe(etu.id);
+
+      // Le bibliothécaire voit bien les deux.
+      const vueBib = await service.findAll({ page: 1, limit: 20 }, BIB);
+      expect(vueBib.meta.total).toBe(2);
+    });
+  });
 });

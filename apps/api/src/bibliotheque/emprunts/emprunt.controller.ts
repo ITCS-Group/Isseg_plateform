@@ -4,7 +4,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import { CreateEmpruntDto } from './dto/create-emprunt.dto';
-import { EmpruntResponseDto } from './dto/emprunt.response.dto';
+import { EmpruntResponseDto, PaginatedEmpruntResponseDto } from './dto/emprunt.response.dto';
 import { ListEmpruntQueryDto } from './dto/list-emprunt-query.dto';
 import { EmpruntService } from './emprunt.service';
 
@@ -26,11 +26,11 @@ export class EmpruntController {
       "Un appelant ETUDIANT/ENSEIGNANT ne voit que ses propres emprunts, quel que soit le " +
       "filtre `emprunteurId` fourni (ignoré et remplacé par son propre id).",
   })
-  @ApiResponse({ status: 200, type: [EmpruntResponseDto] })
+  @ApiResponse({ status: 200, type: PaginatedEmpruntResponseDto })
   findAll(
     @Query() query: ListEmpruntQueryDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<EmpruntResponseDto[]> {
+  ): Promise<PaginatedEmpruntResponseDto> {
     return this.empruntService.findAll(query, user);
   }
 

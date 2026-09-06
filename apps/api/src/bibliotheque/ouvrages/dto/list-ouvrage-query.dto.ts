@@ -1,8 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { StatutOuvrage } from '@prisma/client';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { PaginationDto } from '../../../common/dto/pagination.dto';
 
-export class ListOuvrageQueryDto {
+export class ListOuvrageQueryDto extends PaginationDto {
   @ApiPropertyOptional({ description: 'Recherche libre sur titre/auteur' })
   @IsOptional()
   @IsString()
