@@ -20,6 +20,8 @@ interface PrismaMock {
   refreshToken: {
     updateMany: jest.Mock;
   };
+  /** Transaction interactive : exécute le callback avec le mock lui-même comme `tx`. */
+  $transaction: jest.Mock;
 }
 
 const USER = {
@@ -59,6 +61,7 @@ describe('UsersService', () => {
       refreshToken: {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
     service = new UsersService(prisma as never);
   });
@@ -250,11 +253,7 @@ describe('UsersService', () => {
     expect(prisma.utilisateur.update).not.toHaveBeenCalled();
   });
 
-  // BLOQUÉ: divergence, voir rapport
-  // Attendu : la désactivation d'un compte révoque ses refresh tokens actifs.
-  // Trouvé : `UsersService.remove()` porte un « TODO: Révoquer les refresh
-  // tokens actifs dans la table RefreshToken » et ne touche pas RefreshToken.
-  it.skip('remove : révoque les refresh tokens actifs de l\'utilisateur', async () => {
+  it('remove : révoque les refresh tokens actifs de l\'utilisateur', async () => {
     await service.remove('user-1');
 
     expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
@@ -283,11 +282,7 @@ describe('UsersService', () => {
     expect(prisma.utilisateur.update).not.toHaveBeenCalled();
   });
 
-  // BLOQUÉ: divergence, voir rapport
-  // Attendu : un changement de mot de passe révoque les sessions actives.
-  // Trouvé : `UsersService.changePassword()` porte le même « TODO: Révoquer les
-  // refresh tokens actifs » et ne touche pas RefreshToken.
-  it.skip('changePassword : révoque les sessions actives de l\'utilisateur', async () => {
+  it('changePassword : révoque les sessions actives de l\'utilisateur', async () => {
     await service.changePassword('user-1', { nouveauMotDePasse: 'NouveauPass123!' });
 
     expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
