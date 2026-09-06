@@ -131,13 +131,27 @@ export class UsersService {
   async remove(id: string): Promise<void> {
     await this.findRowOrThrow(id);
 
-    // TODO: Révoquer les refresh tokens actifs dans la table RefreshToken
-    await this.prisma.utilisateur.update({
-      where: { id },
-      data: { estActif: false },
+    // Désactivation et révocation des sessions dans la MÊME transaction :
+    // un échec partiel laisserait un compte désactivé conservant des refresh
+    // tokens valides, donc la capacité d'obtenir de nouveaux access tokens
+    // pendant toute leur durée de vie (7 jours).
+    const revoquesCount = await this.prisma.$transaction(async (tx) => {
+      await tx.utilisateur.update({
+        where: { id },
+        data: { estActif: false },
+      });
+
+      const revoques = await tx.refreshToken.updateMany({
+        where: { utilisateurId: id, isRevoked: false },
+        data: { isRevoked: true },
+      });
+
+      return revoques.count;
     });
 
-    this.logger.log(`Utilisateur désactivé : ${id}`);
+    this.logger.log(
+      `Utilisateur désactivé : ${id} (${revoquesCount} refresh token(s) révoqué(s))`,
+    );
   }
 
   // ── Changement de mot de passe ────────────────────────────────────────────
@@ -147,13 +161,27 @@ export class UsersService {
 
     const hash = await bcrypt.hash(dto.nouveauMotDePasse, BCRYPT_ROUNDS);
 
-    // TODO: Révoquer les refresh tokens actifs dans la table RefreshToken
-    await this.prisma.utilisateur.update({
-      where: { id },
-      data: { motDePasseHash: hash },
+    // Nouveau hash et révocation des sessions dans la MÊME transaction :
+    // un changement de mot de passe doit faire tomber les sessions ouvertes,
+    // sans quoi un refresh token volé resterait exploitable après la mesure
+    // de remédiation.
+    const revoquesCount = await this.prisma.$transaction(async (tx) => {
+      await tx.utilisateur.update({
+        where: { id },
+        data: { motDePasseHash: hash },
+      });
+
+      const revoques = await tx.refreshToken.updateMany({
+        where: { utilisateurId: id, isRevoked: false },
+        data: { isRevoked: true },
+      });
+
+      return revoques.count;
     });
 
-    this.logger.log(`Mot de passe modifié pour l'utilisateur ${id}`);
+    this.logger.log(
+      `Mot de passe modifié pour l'utilisateur ${id} (${revoquesCount} refresh token(s) révoqué(s))`,
+    );
   }
 
   // ── Gestion des rôles ─────────────────────────────────────────────────────

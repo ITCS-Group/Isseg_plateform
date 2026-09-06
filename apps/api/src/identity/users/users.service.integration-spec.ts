@@ -1,11 +1,27 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { AuthService } from '../../auth/auth.service';
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
 import { UsersService } from './users.service';
 
 let prisma: PrismaClient;
 let service: UsersService;
+let authService: AuthService;
+
+/**
+ * Configuration JWT minimale pour les tests de bout en bout : seules les quatre
+ * clés lues par AuthService sont nécessaires. Les secrets sont propres au test
+ * et n'ont aucune valeur hors de ce fichier.
+ */
+const CONFIG_JWT_TEST: Record<string, string> = {
+  'jwt.secret': 'secret-access-integration-test',
+  'jwt.expiresIn': '15m',
+  'jwt.refreshSecret': 'secret-refresh-integration-test',
+  'jwt.refreshExpiresIn': '7d',
+};
 
 const MOT_DE_PASSE = 'MotDePasse123!';
 const UUID_INEXISTANT = '00000000-0000-0000-0000-000000000000';
@@ -26,6 +42,14 @@ async function creerRole(nomRole: string) {
 beforeAll(() => {
   prisma = createTestPrisma(); // garde-fou : refuse si != isseg_test
   service = new UsersService(prisma as never);
+
+  // AuthService n'est utilisé qu'en LECTURE par ce test : il sert de témoin
+  // réel du point de vue de l'attaquant (un refresh token révoqué ne doit
+  // plus rendre d'access token).
+  const config = {
+    get: (key: string) => CONFIG_JWT_TEST[key],
+  } as unknown as ConfigService;
+  authService = new AuthService(prisma as never, new JwtService({}), config);
 });
 
 afterAll(async () => {
@@ -141,12 +165,7 @@ describe('Intégration — UsersService (isseg_test)', () => {
     await expect(service.remove(UUID_INEXISTANT)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  // BLOQUÉ: divergence, voir rapport
-  // Attendu : la désactivation d'un compte révoque ses refresh tokens actifs.
-  // Trouvé : `UsersService.remove()` ne fait que passer estActif à false — la
-  // révocation est encore un « TODO » dans le service, les sessions restent
-  // valides après désactivation.
-  it.skip('remove : révoque les refresh tokens actifs du compte désactivé', async () => {
+  it('remove : révoque les refresh tokens actifs du compte désactivé', async () => {
     const created = await service.create(utilisateurDto('1'));
     await prisma.refreshToken.create({
       data: {
@@ -184,11 +203,7 @@ describe('Intégration — UsersService (isseg_test)', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  // BLOQUÉ: divergence, voir rapport
-  // Attendu : changer le mot de passe invalide les sessions ouvertes.
-  // Trouvé : `UsersService.changePassword()` ne met à jour que motDePasseHash —
-  // la révocation des refresh tokens est encore un « TODO » dans le service.
-  it.skip('changePassword : révoque les sessions ouvertes', async () => {
+  it('changePassword : révoque les sessions ouvertes', async () => {
     const created = await service.create(utilisateurDto('1'));
     await prisma.refreshToken.create({
       data: {
@@ -204,6 +219,70 @@ describe('Intégration — UsersService (isseg_test)', () => {
       where: { utilisateurId: created.id, isRevoked: false },
     });
     expect(actifs).toBe(0);
+  });
+
+  // ── Bout en bout : révocation vue par AuthService.refresh() ─────────────
+  //
+  // Les deux tests ci-dessus constatent la révocation dans la table. Ceux-ci
+  // la constatent du point de vue de l'attaquant : un refresh token émis
+  // AVANT l'opération ne doit plus rendre d'access token.
+
+  // Le témoin d'exploitabilité est pris en base (token présent, non révoqué,
+  // non expiré) plutôt qu'en appelant `refresh()` avant l'opération : une
+  // rotation déclenchée dans la même seconde que le login régénère un JWT
+  // identique (payload `{sub, type}` + `iat`/`exp` à la seconde) et bute sur la
+  // contrainte d'unicité de `tokenHash`. Comportement propre à AuthService,
+  // hors périmètre BACK-07.
+
+  it('remove : un refresh token émis avant la désactivation ne rend plus d\'access token', async () => {
+    const created = await service.create(utilisateurDto('1'));
+    const { refreshToken } = await authService.login({
+      email: 'user1@isseg-test.local',
+      motDePasse: MOT_DE_PASSE,
+    });
+
+    // Témoin : le token est bien exploitable avant l'opération.
+    const avant = await prisma.refreshToken.findFirstOrThrow({
+      where: { utilisateurId: created.id },
+    });
+    expect(avant.isRevoked).toBe(false);
+    expect(avant.expiresAt.getTime()).toBeGreaterThan(Date.now());
+
+    await service.remove(created.id);
+
+    await expect(authService.refresh({ refreshToken })).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    const actifs = await prisma.refreshToken.count({
+      where: { utilisateurId: created.id, isRevoked: false },
+    });
+    expect(actifs).toBe(0);
+  });
+
+  it('changePassword : un refresh token émis avant le changement ne rend plus d\'access token', async () => {
+    const created = await service.create(utilisateurDto('1'));
+    const { refreshToken } = await authService.login({
+      email: 'user1@isseg-test.local',
+      motDePasse: MOT_DE_PASSE,
+    });
+
+    const avant = await prisma.refreshToken.findFirstOrThrow({
+      where: { utilisateurId: created.id },
+    });
+    expect(avant.isRevoked).toBe(false);
+    expect(avant.expiresAt.getTime()).toBeGreaterThan(Date.now());
+
+    await service.changePassword(created.id, { nouveauMotDePasse: 'NouveauPass456!' });
+
+    // Le compte reste actif : seule la révocation peut expliquer le rejet,
+    // et non la validation « compte désactivé » de AuthService.refresh().
+    const row = await prisma.utilisateur.findUniqueOrThrow({ where: { id: created.id } });
+    expect(row.estActif).toBe(true);
+
+    await expect(authService.refresh({ refreshToken })).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
   });
 
   // ── Rôles ───────────────────────────────────────────────────────────────
