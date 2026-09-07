@@ -97,7 +97,12 @@ export function IdentityManagement() {
   const fetchRoles = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const res = await apiFetch<PaginatedRoles>("/roles", { token: accessToken });
+      // limit=100 : plafond maximal accepté par PaginationDto. Cette liste
+      // n'alimente pas que l'onglet Rôles, elle alimente aussi le panneau
+      // « Gérer les rôles » de l'onglet Utilisateurs. Avec la valeur par défaut
+      // de 20 et 18 rôles déjà en base, les rôles au-delà du 20e deviendraient
+      // silencieusement non attribuables : un bug fonctionnel, pas d'affichage.
+      const res = await apiFetch<PaginatedRoles>("/roles?limit=100", { token: accessToken });
       setRoles(res.data);
       setRolesTotal(res.meta.total);
     } catch (e) {
@@ -108,7 +113,11 @@ export function IdentityManagement() {
   const fetchPermissions = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const res = await apiFetch<PaginatedPermissions>("/permissions", { token: accessToken });
+      // limit=100 : même raison que pour les rôles. 8 permissions aujourd'hui,
+      // mais le nombre croît d'un cran à chaque module métier livré.
+      const res = await apiFetch<PaginatedPermissions>("/permissions?limit=100", {
+        token: accessToken,
+      });
       setPermissions(res.data);
       setPermissionsTotal(res.meta.total);
     } catch (e) {

@@ -51,7 +51,14 @@ export default function TeacherDashboardPage() {
   const fetchCours = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const res = await apiFetch<Paginated<CoursClasse>>("/cours-classes", { token: accessToken });
+      // limit=100 : plafond maximal accepté par PaginationDto. Sans ce paramètre
+      // explicite, le backend retombe sur sa valeur par défaut de 20 et tronque
+      // silencieusement la grille (un enseignant sur 5 cours × 5 classes dépasse
+      // déjà le seuil). Mitigation, pas une pagination : au-delà de 100 lignes il
+      // faudra une vraie pagination d'interface.
+      const res = await apiFetch<Paginated<CoursClasse>>("/cours-classes?limit=100", {
+        token: accessToken,
+      });
       setCours(res.data);
     } catch (e) {
       setCoursError(e instanceof ApiError ? e.message : "Erreur réseau");
