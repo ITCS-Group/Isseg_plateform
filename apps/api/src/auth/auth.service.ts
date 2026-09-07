@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuditAction, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma/prisma.service';
 import type { LoginDto } from './dto/login.dto';
 import type { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -482,9 +482,23 @@ export class AuthService {
       permissions: user.permissions,
     };
 
+    // `jti` : identifiant unique par émission.
+    //
+    // Sans lui, le payload se réduit à { sub, type } et les seules parties
+    // variables du JWT sont `iat` et `exp`, exprimés à la seconde. Deux
+    // émissions pour le MÊME utilisateur dans la MÊME seconde produisent donc
+    // un jeton identique au bit près, donc le même SHA-256, qui viole la
+    // contrainte d'unicité sur RefreshToken.tokenHash. Cas nominal : un client
+    // qui rafraîchit immédiatement après la connexion, ou deux connexions
+    // simultanées — l'utilisateur recevait alors une erreur 500.
+    //
+    // `jti` n'est volontairement PAS vérifié dans verifyRefreshToken() : les
+    // refresh tokens déjà émis n'en portent pas, et les invalider ferait
+    // tomber toutes les sessions ouvertes au déploiement.
     const refreshPayload: RefreshPayload = {
       sub: user.id,
       type: 'refresh',
+      jti: randomUUID(),
     };
 
     const [accessToken, refreshToken] = await Promise.all([

@@ -25,6 +25,13 @@ export interface JwtPayload {
 export interface RefreshPayload {
   sub: string;
   type: 'refresh';
+  /**
+   * Identifiant unique de l'émission, garantissant que deux jetons émis pour le
+   * même utilisateur dans la même seconde restent distincts (`iat`/`exp` étant
+   * exprimés à la seconde). Optionnel : les jetons émis avant l'introduction de
+   * ce claim n'en portent pas et doivent rester valides jusqu'à leur expiration.
+   */
+  jti?: string;
   iat?: number;
   exp?: number;
 }
