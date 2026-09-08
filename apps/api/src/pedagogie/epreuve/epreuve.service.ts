@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, StatutValidation } from '@prisma/client';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateEpreuveDto } from './dto/create-epreuve.dto';
 import { ListEpreuveQueryDto } from './dto/list-epreuve-query.dto';
@@ -20,7 +21,10 @@ type EpreuveRow = Prisma.EpreuveGetPayload<{ select: typeof EPREUVE_SELECT }>;
 export class EpreuveService {
   private readonly logger = new Logger(EpreuveService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
@@ -56,7 +60,7 @@ export class EpreuveService {
 
   // ── Création ──────────────────────────────────────────────────────────────
 
-  async create(dto: CreateEpreuveDto): Promise<EpreuveResponseDto> {
+  async create(dto: CreateEpreuveDto, actorId: string): Promise<EpreuveResponseDto> {
     const coursClasse = await this.prisma.coursClasse.findUnique({
       where: { id: dto.coursClasseId },
       include: { cours: true },
@@ -71,9 +75,21 @@ export class EpreuveService {
       );
     }
 
-    const created = await this.prisma.epreuve.create({
-      data: { coursClasseId: dto.coursClasseId, type: dto.type },
-      select: EPREUVE_SELECT,
+    const created = await this.prisma.$transaction(async (tx) => {
+      const epreuve = await tx.epreuve.create({
+        data: { coursClasseId: dto.coursClasseId, type: dto.type },
+        select: EPREUVE_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Epreuve',
+        entityId: epreuve.id,
+        actorId,
+        details: { coursClasseId: dto.coursClasseId, type: dto.type },
+      });
+
+      return epreuve;
     });
 
     this.logger.log(`Epreuve créée (coursClasseId: ${dto.coursClasseId}, type: ${dto.type})`);
@@ -82,8 +98,9 @@ export class EpreuveService {
 
   // ── Suppression ───────────────────────────────────────────────────────────
 
-  async remove(id: string): Promise<void> {
-    await this.findRowOrThrow(id);
+  async remove(id: string, actorId: string): Promise<void> {
+    // Type et cours-classe capturés avant la suppression.
+    const epreuve = await this.findRowOrThrow(id);
 
     const notesCount = await this.prisma.noteEtudiant.count({ where: { epreuveId: id } });
     if (notesCount > 0) {
@@ -92,7 +109,18 @@ export class EpreuveService {
       );
     }
 
-    await this.prisma.epreuve.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.epreuve.delete({ where: { id } });
+
+      await this.audit.record(tx, {
+        action: 'DELETE',
+        entity: 'Epreuve',
+        entityId: id,
+        actorId,
+        details: { coursClasseId: epreuve.coursClasseId, type: epreuve.type },
+      });
+    });
+
     this.logger.log(`Epreuve supprimée : ${id}`);
   }
 

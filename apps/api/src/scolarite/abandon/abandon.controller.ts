@@ -88,8 +88,11 @@ export class AbandonController {
   @ApiResponse({ status: 404, description: 'Abandon introuvable' })
   @ApiResponse({ status: 409, description: 'Conflit de concurrence' })
   @ApiResponse({ status: 422, description: 'Transition métier interdite' })
-  demanderReprise(@Param('id', ParseUUIDPipe) id: string): Promise<AbandonResponseDto> {
-    return this.abandonService.demanderReprise(id);
+  demanderReprise(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') actorId: string,
+  ): Promise<AbandonResponseDto> {
+    return this.abandonService.demanderReprise(id, actorId);
   }
 
   // ── POST /api/v1/abandons/:id/decider-reprise ─────────────────────────────

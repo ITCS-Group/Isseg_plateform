@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, StatutRequete } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { assertCanViewRequete } from '../common/requete-access.helper';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
@@ -25,7 +26,10 @@ type InterventionRow = Prisma.InterventionGetPayload<{ select: typeof INTERVENTI
 export class InterventionService {
   private readonly logger = new Logger(InterventionService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ── Création ──────────────────────────────────────────────────────────────
 
@@ -63,6 +67,22 @@ export class InterventionService {
       if (requete.statut === StatutRequete.OUVERTE) {
         await tx.requete.update({ where: { id: requeteId }, data: { statut: StatutRequete.EN_COURS } });
       }
+
+      // L'acteur est le compte authentifié du technicien, pas `technicien.id`
+      // qui est son profil métier.
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Intervention',
+        entityId: intervention.id,
+        actorId: utilisateurId,
+        details: {
+          requeteId,
+          technicienId: technicien.id,
+          statutRequeteAvant: requete.statut,
+          statutRequeteApres:
+            requete.statut === StatutRequete.OUVERTE ? StatutRequete.EN_COURS : requete.statut,
+        },
+      });
 
       return intervention;
     });

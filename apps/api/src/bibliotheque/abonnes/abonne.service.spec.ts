@@ -1,10 +1,16 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { TypeAbonne } from '@prisma/client';
+import { AuditService } from '../../common/audit/audit.service';
 import { AbonneService } from './abonne.service';
 
 interface PrismaMock {
   utilisateur: { findUnique: jest.Mock };
   abonne: { findUnique: jest.Mock; create: jest.Mock; findMany: jest.Mock; count: jest.Mock };
+  auditLog: {
+    create: jest.Mock;
+  };
+  /** Transaction interactive : le callback reçoit le mock lui-même. */
+  $transaction: jest.Mock;
 }
 
 /** Pagination par défaut (cf. PaginationDto) — page 1, 20 éléments. */
@@ -24,8 +30,12 @@ const ABONNE_ROW = {
   utilisateur: { nom: 'N', prenom: 'P' },
 };
 
+/** Acteur des mutations. Prisma est mocké : aucune contrainte de clé étrangère. */
+const acteurId = 'acteur-1';
+
 describe('AbonneService', () => {
   let service: AbonneService;
+  let audit: AuditService;
   let prisma: PrismaMock;
 
   beforeEach(() => {
@@ -37,26 +47,42 @@ describe('AbonneService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new AbonneService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new AbonneService(prisma as never, audit);
   });
+
+  /** Dernière entrée soumise à AuditService, et client utilisé pour l'écrire. */
+  function dernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][1];
+  }
+  function clientDuDernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][0];
+  }
 
   it('utilisateur introuvable → NotFoundException', async () => {
     prisma.utilisateur.findUnique.mockResolvedValue(null);
     await expect(
-      service.create({ utilisateurId: 'x', typeAbonne: TypeAbonne.ENSEIGNANT }),
+      service.create({ utilisateurId: 'x', typeAbonne: TypeAbonne.ENSEIGNANT }, acteurId),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('utilisateur déjà abonné → ConflictException', async () => {
     prisma.abonne.findUnique.mockResolvedValue({ id: 'existing' });
     await expect(
-      service.create({ utilisateurId: 'user-1', typeAbonne: TypeAbonne.ENSEIGNANT }),
+      service.create({ utilisateurId: 'user-1', typeAbonne: TypeAbonne.ENSEIGNANT }, acteurId),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('création : limiteEmprunts/dureePretJours dérivés du TypeAbonne (ENSEIGNANT → 10/30)', async () => {
-    await service.create({ utilisateurId: 'user-1', typeAbonne: TypeAbonne.ENSEIGNANT });
+    await service.create({ utilisateurId: 'user-1', typeAbonne: TypeAbonne.ENSEIGNANT }, acteurId);
 
     expect(prisma.abonne.create.mock.calls[0][0].data).toMatchObject({
       utilisateurId: 'user-1',
@@ -124,6 +150,40 @@ describe('AbonneService', () => {
         expect.objectContaining({ skip: 3, take: 3 }),
       );
       expect(result.meta).toEqual({ total: 7, page: 2, limit: 3, totalPages: 3 });
+    });
+  });
+
+  // ── Audit métier (BACK-01, lot 3) ──────────────────────────────────────────
+
+  describe('audit métier', () => {
+    it('create : CREATE sur l\'abonné, l\'utilisateur abonné restant un détail', async () => {
+      prisma.abonne.findUnique.mockResolvedValue(null);
+      await service.create({ utilisateurId: 'u-1', typeAbonne: 'ENSEIGNANT' } as never, acteurId);
+
+      const e = dernierAudit();
+      expect(e.action).toBe('CREATE');
+      expect(e.entity).toBe('Abonne');
+      expect(e.actorId).toBe(acteurId);
+      // La personne abonnée n'est PAS l'acteur.
+      expect(e.details).toMatchObject({ utilisateurId: 'u-1' });
+      expect(e.actorId).not.toBe('u-1');
+    });
+
+    it('l\'audit passe par le client de la transaction', async () => {
+      prisma.abonne.findUnique.mockResolvedValue(null);
+      await service.create({ utilisateurId: 'u-1', typeAbonne: 'ENSEIGNANT' } as never, acteurId);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(clientDuDernierAudit()).toBe(prisma);
+    });
+
+    it('un refus métier avant la transaction n\'écrit aucun audit', async () => {
+      prisma.utilisateur.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.create({ utilisateurId: 'inconnu', typeAbonne: 'ENSEIGNANT' } as never, acteurId),
+      ).rejects.toBeDefined();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 });

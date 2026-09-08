@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaClient, StatutValidation, TypeEpreuve } from '@prisma/client';
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
+import { AuditService } from '../../common/audit/audit.service';
 import { CoursClasseService } from './cours-classe.service';
 
 // ── Utilitaires ──────────────────────────────────────────────────────────────
@@ -8,6 +9,11 @@ let seq = 0;
 const uid = (p: string) => `${p}-${Date.now()}-${seq++}`;
 
 let prisma: PrismaClient;
+/**
+ * Acteur des mutations, présent RÉELLEMENT en base : `AuditLog.utilisateurId`
+ * porte une clé étrangère vers `Utilisateur`.
+ */
+let acteurId: string;
 let service: CoursClasseService;
 
 const ADMIN = { id: 'admin-int', roles: ['ADMIN'] };
@@ -53,7 +59,7 @@ async function makeClasse() {
 // ── Setup ────────────────────────────────────────────────────────────────────
 beforeAll(() => {
   prisma = createTestPrisma(); // garde-fou : refuse si != isseg_test
-  service = new CoursClasseService(prisma as never);
+  service = new CoursClasseService(prisma as never, new AuditService());
 });
 
 afterAll(async () => {
@@ -62,6 +68,17 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateAll(prisma);
+
+  const acteur = await prisma.utilisateur.create({
+    data: {
+      nom: 'Admin',
+      prenom: 'Acteur',
+      email: `acteur-audit-${Date.now()}-${Math.random()}@isseg-test.local`,
+      motDePasseHash: 'hash-non-significatif',
+      estActif: true,
+    },
+  });
+  acteurId = acteur.id;
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -230,7 +247,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       const classe = await makeClasse();
 
       await expect(
-        service.create({ coursId: '00000000-0000-4000-8000-000000000000', classeId: classe.id }),
+        service.create({ coursId: '00000000-0000-4000-8000-000000000000', classeId: classe.id }, acteurId),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -238,7 +255,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       const cours = await makeCoursScenarise();
 
       await expect(
-        service.create({ coursId: cours.id, classeId: '00000000-0000-4000-8000-000000000000' }),
+        service.create({ coursId: cours.id, classeId: '00000000-0000-4000-8000-000000000000' }, acteurId),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -246,7 +263,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       const cours = await makeCoursScenarise(StatutValidation.EN_ATTENTE);
       const classe = await makeClasse();
 
-      await expect(service.create({ coursId: cours.id, classeId: classe.id })).rejects.toMatchObject({
+      await expect(service.create({ coursId: cours.id, classeId: classe.id }, acteurId)).rejects.toMatchObject({
         message: 'Le cours doit être approuvé avant de pouvoir être associé à une classe.',
       });
 
@@ -260,7 +277,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       await prisma.coursClasse.create({ data: { coursId: cours.id, classeId: classe.id } });
 
       await expect(
-        service.create({ coursId: cours.id, classeId: classe.id }),
+        service.create({ coursId: cours.id, classeId: classe.id }, acteurId),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
@@ -268,7 +285,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       const cours = await makeCoursScenarise();
       const classe = await makeClasse();
 
-      const result = await service.create({ coursId: cours.id, classeId: classe.id });
+      const result = await service.create({ coursId: cours.id, classeId: classe.id }, acteurId);
 
       const persisted = await prisma.coursClasse.findUnique({ where: { id: result.id } });
       expect(persisted).not.toBeNull();
@@ -279,7 +296,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
   // ── remove ────────────────────────────────────────────────────────────────
   describe('remove', () => {
     it('lève NotFoundException si l’association est absente', async () => {
-      await expect(service.remove('00000000-0000-4000-8000-000000000000')).rejects.toBeInstanceOf(
+      await expect(service.remove('00000000-0000-4000-8000-000000000000', acteurId)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -290,7 +307,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       const cc = await prisma.coursClasse.create({ data: { coursId: cours.id, classeId: classe.id } });
       await prisma.epreuve.create({ data: { coursClasseId: cc.id, type: TypeEpreuve.CC } });
 
-      await expect(service.remove(cc.id)).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.remove(cc.id, acteurId)).rejects.toBeInstanceOf(ConflictException);
 
       const stillThere = await prisma.coursClasse.findUnique({ where: { id: cc.id } });
       expect(stillThere).not.toBeNull();
@@ -301,7 +318,7 @@ describe('Intégration — CoursClasseService (isseg_test)', () => {
       const classe = await makeClasse();
       const cc = await prisma.coursClasse.create({ data: { coursId: cours.id, classeId: classe.id } });
 
-      await service.remove(cc.id);
+      await service.remove(cc.id, acteurId);
 
       const gone = await prisma.coursClasse.findUnique({ where: { id: cc.id } });
       expect(gone).toBeNull();

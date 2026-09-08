@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { PrismaClient, StatutAbandon } from '@prisma/client';
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
+import { AuditService } from '../../common/audit/audit.service';
 import { AbandonService } from './abandon.service';
 import { DecisionReprise } from './dto/decider-reprise.dto';
 
@@ -58,7 +59,7 @@ const reloadAbandon = (id: string) => prisma.abandon.findUniqueOrThrow({ where: 
 // ── Setup ────────────────────────────────────────────────────────────────────
 beforeAll(() => {
   prisma = createTestPrisma(); // garde-fou : refuse si != isseg_test
-  service = new AbandonService(prisma as never);
+  service = new AbandonService(prisma as never, new AuditService());
 });
 
 afterAll(async () => {
@@ -113,7 +114,7 @@ describe('Intégration — AbandonService (isseg_test)', () => {
     const { etudiant, annee, agentSignale, inscription } = await makeFixtures();
     const abandon = await service.signaler({ etudiantId: etudiant.id, anneeId: annee.id }, agentSignale.id);
 
-    const result = await service.demanderReprise(abandon.id);
+    const result = await service.demanderReprise(abandon.id, agentSignale.id);
 
     expect(result.statut).toBe(StatutAbandon.REPRISE_DEMANDEE);
     expect(result.dateDemandeReprise).toBeInstanceOf(Date);
@@ -125,19 +126,19 @@ describe('Intégration — AbandonService (isseg_test)', () => {
   it('demanderReprise() lève UnprocessableEntityException depuis l\'état terminal REPRISE_ACCORDEE', async () => {
     const { etudiant, annee, agentSignale, agentDecide } = await makeFixtures();
     const abandon = await service.signaler({ etudiantId: etudiant.id, anneeId: annee.id }, agentSignale.id);
-    await service.demanderReprise(abandon.id);
+    await service.demanderReprise(abandon.id, agentSignale.id);
     await service.deciderReprise(abandon.id, agentDecide.id, { decision: DecisionReprise.ACCORDEE });
 
-    await expect(service.demanderReprise(abandon.id)).rejects.toBeInstanceOf(UnprocessableEntityException);
+    await expect(service.demanderReprise(abandon.id, agentSignale.id)).rejects.toBeInstanceOf(UnprocessableEntityException);
   });
 
   it('demanderReprise() est autorisée après un refus (REPRISE_REFUSEE → REPRISE_DEMANDEE), un recours reste possible', async () => {
     const { etudiant, annee, agentSignale, agentDecide, inscription } = await makeFixtures();
     const abandon = await service.signaler({ etudiantId: etudiant.id, anneeId: annee.id }, agentSignale.id);
-    await service.demanderReprise(abandon.id);
+    await service.demanderReprise(abandon.id, agentSignale.id);
     await service.deciderReprise(abandon.id, agentDecide.id, { decision: DecisionReprise.REFUSEE });
 
-    const reopened = await service.demanderReprise(abandon.id);
+    const reopened = await service.demanderReprise(abandon.id, agentSignale.id);
     expect(reopened.statut).toBe(StatutAbandon.REPRISE_DEMANDEE);
 
     const accorded = await service.deciderReprise(abandon.id, agentDecide.id, {
@@ -153,7 +154,7 @@ describe('Intégration — AbandonService (isseg_test)', () => {
   it('deciderReprise() ACCORDEE réactive l\'inscription correspondante', async () => {
     const { etudiant, annee, agentSignale, agentDecide, inscription } = await makeFixtures();
     const abandon = await service.signaler({ etudiantId: etudiant.id, anneeId: annee.id }, agentSignale.id);
-    await service.demanderReprise(abandon.id);
+    await service.demanderReprise(abandon.id, agentSignale.id);
 
     const result = await service.deciderReprise(abandon.id, agentDecide.id, {
       decision: DecisionReprise.ACCORDEE,
@@ -170,7 +171,7 @@ describe('Intégration — AbandonService (isseg_test)', () => {
   it('deciderReprise() REFUSEE laisse l\'inscription désactivée', async () => {
     const { etudiant, annee, agentSignale, agentDecide, inscription } = await makeFixtures();
     const abandon = await service.signaler({ etudiantId: etudiant.id, anneeId: annee.id }, agentSignale.id);
-    await service.demanderReprise(abandon.id);
+    await service.demanderReprise(abandon.id, agentSignale.id);
 
     const result = await service.deciderReprise(abandon.id, agentDecide.id, {
       decision: DecisionReprise.REFUSEE,
@@ -205,7 +206,7 @@ describe('Intégration — AbandonService (isseg_test)', () => {
     await service.signaler({ etudiantId: a.etudiant.id, anneeId: a.annee.id }, a.agentSignale.id);
     const b = await makeFixtures();
     const bAbandon = await service.signaler({ etudiantId: b.etudiant.id, anneeId: b.annee.id }, b.agentSignale.id);
-    await service.demanderReprise(bAbandon.id);
+    await service.demanderReprise(bAbandon.id, b.agentSignale.id);
 
     const constates = await service.findAll({ page: 1, limit: 20, statut: StatutAbandon.CONSTATE });
     expect(constates.data).toHaveLength(1);
@@ -213,5 +214,83 @@ describe('Intégration — AbandonService (isseg_test)', () => {
 
     const all = await service.findAll({ page: 1, limit: 20 });
     expect(all.meta.total).toBe(2);
+  });
+
+  // ── Audit métier (BACK-01, lot 5) — vérifié en base ───────────────────────
+
+  describe('audit métier', () => {
+    async function auditsDe(entityId: string) {
+      return prisma.auditLog.findMany({
+        where: { entity: 'Abandon', entityId },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
+
+    it('les trois transitions laissent chacune leur trace, attribuée au bon acteur', async () => {
+      const { etudiant, annee, agentSignale, agentDecide } = await makeFixtures();
+
+      const abandon = await service.signaler(
+        { etudiantId: etudiant.id, anneeId: annee.id },
+        agentSignale.id,
+      );
+      await service.demanderReprise(abandon.id, agentSignale.id);
+      await service.deciderReprise(abandon.id, agentDecide.id, {
+        decision: DecisionReprise.ACCORDEE,
+      });
+
+      const audits = await auditsDe(abandon.id);
+      expect(audits.map((a) => a.action)).toEqual(['CREATE', 'UPDATE', 'UPDATE']);
+      // Chaque étape porte SON acteur, ce que le modèle Abandon seul ne dit pas :
+      // il ne conserve que signaleParId et decideParId, sans trace du demandeur.
+      expect(audits[0].utilisateurId).toBe(agentSignale.id);
+      expect(audits[2].utilisateurId).toBe(agentDecide.id);
+      expect(audits[2].details).toMatchObject({ statutApres: 'REPRISE_ACCORDEE' });
+    });
+
+    it('l\'acteur n\'est jamais l\'étudiant concerné', async () => {
+      const { etudiant, annee, agentSignale, studentUser } = await makeFixtures();
+
+      const abandon = await service.signaler(
+        { etudiantId: etudiant.id, anneeId: annee.id },
+        agentSignale.id,
+      );
+
+      const audits = await auditsDe(abandon.id);
+      expect(audits[0].utilisateurId).not.toBe(studentUser.id);
+      expect(audits[0].details).toMatchObject({ etudiantId: etudiant.id });
+    });
+
+    it('ATOMICITÉ : un audit impossible annule le signalement ET la désactivation', async () => {
+      const { etudiant, annee, inscription } = await makeFixtures();
+
+      await expect(
+        service.signaler(
+          { etudiantId: etudiant.id, anneeId: annee.id },
+          '00000000-0000-0000-0000-000000000000',
+        ),
+      ).rejects.toBeDefined();
+
+      expect(await prisma.abandon.count({ where: { etudiantId: etudiant.id } })).toBe(0);
+      // L'inscription ne doit PAS avoir été désactivée par une transaction annulée.
+      const apres = await prisma.inscription.findUniqueOrThrow({ where: { id: inscription!.id } });
+      expect(apres.estActive).toBe(true);
+    });
+
+    it('une transition invalide n\'écrit aucun audit', async () => {
+      const { etudiant, annee, agentSignale } = await makeFixtures();
+      const abandon = await service.signaler(
+        { etudiantId: etudiant.id, anneeId: annee.id },
+        agentSignale.id,
+      );
+
+      // CONSTATE → REPRISE_ACCORDEE est interdit sans demande préalable.
+      await expect(
+        service.deciderReprise(abandon.id, agentSignale.id, {
+          decision: DecisionReprise.ACCORDEE,
+        }),
+      ).rejects.toBeDefined();
+
+      expect((await auditsDe(abandon.id)).map((a) => a.action)).toEqual(['CREATE']);
+    });
   });
 });

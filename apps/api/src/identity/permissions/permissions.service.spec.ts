@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { AuditService } from '../../common/audit/audit.service';
 import { PermissionsService } from './permissions.service';
 
 interface PrismaMock {
@@ -13,6 +14,11 @@ interface PrismaMock {
   rolePermission: {
     count: jest.Mock;
   };
+  auditLog: {
+    create: jest.Mock;
+  };
+  /** Transaction interactive : exécute le callback avec le mock lui-même comme `tx`. */
+  $transaction: jest.Mock;
 }
 
 /** Pagination par défaut (cf. PaginationDto) — évite de la répéter dans chaque appel. */
@@ -26,8 +32,13 @@ const PERMISSION = {
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
+/** Acteur des mutations. Prisma est mocké ici : aucune contrainte de clé
+ *  étrangère, une valeur constante suffit. */
+const acteurId = 'acteur-1';
+
 describe('PermissionsService', () => {
   let service: PermissionsService;
+  let audit: AuditService;
   let prisma: PrismaMock;
 
   beforeEach(() => {
@@ -43,9 +54,25 @@ describe('PermissionsService', () => {
       rolePermission: {
         count: jest.fn().mockResolvedValue(0),
       },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new PermissionsService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new PermissionsService(prisma as never, audit);
   });
+
+  /** Dernière entrée soumise à AuditService, et client utilisé pour l'écrire. */
+  function dernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][1];
+  }
+  function clientDuDernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][0];
+  }
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
@@ -134,7 +161,7 @@ describe('PermissionsService', () => {
     const result = await service.create({
       nomPermission: 'READ_PEDAGOGIE',
       description: 'Lecture des données pédagogiques',
-    });
+    }, acteurId);
 
     expect(prisma.permission.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -153,7 +180,7 @@ describe('PermissionsService', () => {
       nomPermission: 'READ_PEDAGOGIE',
     });
 
-    await expect(service.create({ nomPermission: 'READ_PEDAGOGIE' })).rejects.toBeInstanceOf(
+    await expect(service.create({ nomPermission: 'READ_PEDAGOGIE' }, acteurId)).rejects.toBeInstanceOf(
       ConflictException,
     );
     expect(prisma.permission.create).not.toHaveBeenCalled();
@@ -162,7 +189,7 @@ describe('PermissionsService', () => {
   // ── Mise à jour ───────────────────────────────────────────────────────────
 
   it('update : modifie la description sans contrôle de nom', async () => {
-    await service.update('perm-1', { description: 'Nouvelle description' });
+    await service.update('perm-1', { description: 'Nouvelle description' }, acteurId);
 
     expect(prisma.permission.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -177,7 +204,7 @@ describe('PermissionsService', () => {
       .mockResolvedValueOnce(PERMISSION) // findRowOrThrow
       .mockResolvedValueOnce(null); // assertNameFree
 
-    await service.update('perm-1', { nomPermission: 'MANAGE_PEDAGOGIE' });
+    await service.update('perm-1', { nomPermission: 'MANAGE_PEDAGOGIE' }, acteurId);
 
     expect(prisma.permission.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { nomPermission: 'MANAGE_PEDAGOGIE' } }),
@@ -188,7 +215,7 @@ describe('PermissionsService', () => {
     prisma.permission.findUnique.mockResolvedValue(null);
 
     await expect(
-      service.update('missing', { description: 'x' }),
+      service.update('missing', { description: 'x' }, acteurId),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.permission.update).not.toHaveBeenCalled();
   });
@@ -199,7 +226,7 @@ describe('PermissionsService', () => {
       .mockResolvedValueOnce({ id: 'autre', nomPermission: 'MANAGE_PEDAGOGIE' }); // assertNameFree
 
     await expect(
-      service.update('perm-1', { nomPermission: 'MANAGE_PEDAGOGIE' }),
+      service.update('perm-1', { nomPermission: 'MANAGE_PEDAGOGIE' }, acteurId),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.permission.update).not.toHaveBeenCalled();
   });
@@ -210,7 +237,7 @@ describe('PermissionsService', () => {
       .mockResolvedValueOnce(PERMISSION); // assertNameFree → même id
 
     await expect(
-      service.update('perm-1', { nomPermission: 'READ_PEDAGOGIE' }),
+      service.update('perm-1', { nomPermission: 'READ_PEDAGOGIE' }, acteurId),
     ).resolves.toBeDefined();
     expect(prisma.permission.update).toHaveBeenCalled();
   });
@@ -218,7 +245,7 @@ describe('PermissionsService', () => {
   // ── Suppression ───────────────────────────────────────────────────────────
 
   it('remove : supprime une permission non rattachée', async () => {
-    await service.remove('perm-1');
+    await service.remove('perm-1', acteurId);
 
     expect(prisma.permission.delete).toHaveBeenCalledWith({ where: { id: 'perm-1' } });
   });
@@ -226,14 +253,63 @@ describe('PermissionsService', () => {
   it('remove : permission encore rattachée à des rôles → ConflictException', async () => {
     prisma.rolePermission.count.mockResolvedValue(2);
 
-    await expect(service.remove('perm-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.remove('perm-1', acteurId)).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.permission.delete).not.toHaveBeenCalled();
   });
 
   it('remove : introuvable → NotFoundException', async () => {
     prisma.permission.findUnique.mockResolvedValue(null);
 
-    await expect(service.remove('missing')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.remove('missing', acteurId)).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.permission.delete).not.toHaveBeenCalled();
+  });
+
+  // ── Audit métier (BACK-01, lot 2) ──────────────────────────────────────────
+
+  describe('audit métier', () => {
+    it('create : CREATE sur la permission créée', async () => {
+      prisma.permission.findUnique.mockResolvedValue(null);
+      await service.create({ nomPermission: 'NOUVELLE' } as never, acteurId);
+
+      const e = dernierAudit();
+      expect(e.action).toBe('CREATE');
+      expect(e.entity).toBe('Permission');
+      expect(e.actorId).toBe(acteurId);
+    });
+
+    it('update : UPDATE, seuls les noms des champs modifiés', async () => {
+      await service.update('perm-1', { nomPermission: 'RENOMMEE' } as never, acteurId);
+
+      const e = dernierAudit();
+      expect(e.action).toBe('UPDATE');
+      expect(e.entity).toBe('Permission');
+      expect(e.entityId).toBe('perm-1');
+      expect(e.details).toEqual({ champsModifies: ['nomPermission'] });
+    });
+
+    it('remove : DELETE conservant le nom capturé avant suppression', async () => {
+      prisma.rolePermission.count.mockResolvedValue(0);
+      await service.remove('perm-1', acteurId);
+
+      const e = dernierAudit();
+      expect(e.action).toBe('DELETE');
+      expect(e.entityId).toBe('perm-1');
+      expect(e.details).toMatchObject({ nomPermission: expect.any(String) });
+    });
+
+    it('l\'audit passe par le client de la transaction', async () => {
+      prisma.rolePermission.count.mockResolvedValue(0);
+      await service.remove('perm-1', acteurId);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(clientDuDernierAudit()).toBe(prisma);
+    });
+
+    it('un refus métier avant la transaction n\'écrit aucun audit', async () => {
+      prisma.rolePermission.count.mockResolvedValue(2);
+
+      await expect(service.remove('perm-1', acteurId)).rejects.toBeDefined();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { Prisma, StatutRequete } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import {
   assertCanHandleRequete,
@@ -33,7 +34,10 @@ type RequeteRow = Prisma.RequeteGetPayload<{ select: typeof REQUETE_SELECT }>;
 export class RequeteService {
   private readonly logger = new Logger(RequeteService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ── Création ──────────────────────────────────────────────────────────────
 
@@ -47,14 +51,34 @@ export class RequeteService {
 
     const sousServiceCible = NATURE_SOUS_SERVICE_MAP[dto.nature];
 
-    const created = await this.prisma.requete.create({
-      data: {
-        demandeurId: personnel.id,
-        nature: dto.nature,
-        sousServiceCible,
-        description: dto.description,
-      },
-      select: REQUETE_SELECT,
+    const created = await this.prisma.$transaction(async (tx) => {
+      const requete = await tx.requete.create({
+        data: {
+          demandeurId: personnel.id,
+          nature: dto.nature,
+          sousServiceCible,
+          description: dto.description,
+        },
+        select: REQUETE_SELECT,
+      });
+
+      // L'acteur est le compte AUTHENTIFIÉ (`utilisateurId`), pas `personnel.id`
+      // qui est son profil Personnel : même personne, table différente, et
+      // AuditLog.utilisateurId référence Utilisateur.
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Requete',
+        entityId: requete.id,
+        actorId: utilisateurId,
+        details: {
+          nature: dto.nature,
+          sousServiceCible,
+          demandeurPersonnelId: personnel.id,
+          statut: requete.statut,
+        },
+      });
+
+      return requete;
     });
 
     this.logger.log(`Requête créée (id: ${created.id}, sousService: ${sousServiceCible})`);
@@ -109,10 +133,22 @@ export class RequeteService {
 
     await assertCanHandleRequete(this.prisma, row, user);
 
-    const updated = await this.prisma.requete.update({
-      where: { id },
-      data: { statut: StatutRequete.CLOTUREE, dateCloture: new Date() },
-      select: REQUETE_SELECT,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row2 = await tx.requete.update({
+        where: { id },
+        data: { statut: StatutRequete.CLOTUREE, dateCloture: new Date() },
+        select: REQUETE_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'Requete',
+        entityId: id,
+        actorId: user.id,
+        details: { statutAvant: row.statut, statutApres: StatutRequete.CLOTUREE },
+      });
+
+      return row2;
     });
 
     this.logger.log(`Requête clôturée : ${id}`);

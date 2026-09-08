@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException } from '@nestj
 import { Prisma, StatutValidation } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateCoursClasseDto } from './dto/create-cours-classe.dto';
 import { ListCoursClasseQueryDto } from './dto/list-cours-classe-query.dto';
@@ -28,7 +29,10 @@ type CoursClasseRow = Prisma.CoursClasseGetPayload<{ select: typeof COURS_CLASSE
 export class CoursClasseService {
   private readonly logger = new Logger(CoursClasseService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
@@ -100,7 +104,10 @@ export class CoursClasseService {
 
   // ── Création ──────────────────────────────────────────────────────────────
 
-  async create(dto: CreateCoursClasseDto): Promise<CoursClasseResponseDto> {
+  async create(
+    dto: CreateCoursClasseDto,
+    actorId: string,
+  ): Promise<CoursClasseResponseDto> {
     const cours = await this.prisma.coursScenarise.findUnique({ where: { id: dto.coursId } });
     if (!cours) {
       throw new NotFoundException(`CoursScenarise introuvable (id: ${dto.coursId})`);
@@ -119,9 +126,21 @@ export class CoursClasseService {
 
     await this.assertAssociationFree(dto.coursId, dto.classeId);
 
-    const created = await this.prisma.coursClasse.create({
-      data: { coursId: dto.coursId, classeId: dto.classeId },
-      select: COURS_CLASSE_SELECT,
+    const created = await this.prisma.$transaction(async (tx) => {
+      const association = await tx.coursClasse.create({
+        data: { coursId: dto.coursId, classeId: dto.classeId },
+        select: COURS_CLASSE_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'CoursClasse',
+        entityId: association.id,
+        actorId,
+        details: { coursId: dto.coursId, classeId: dto.classeId },
+      });
+
+      return association;
     });
 
     this.logger.log(
@@ -132,8 +151,10 @@ export class CoursClasseService {
 
   // ── Suppression ───────────────────────────────────────────────────────────
 
-  async remove(id: string): Promise<void> {
-    await this.findRowOrThrow(id);
+  async remove(id: string, actorId: string): Promise<void> {
+    // Cours et classe capturés AVANT la suppression : la trace doit rester
+    // lisible une fois l'association effacée.
+    const association = await this.findRowOrThrow(id);
 
     const epreuvesCount = await this.prisma.epreuve.count({ where: { coursClasseId: id } });
     if (epreuvesCount > 0) {
@@ -142,7 +163,18 @@ export class CoursClasseService {
       );
     }
 
-    await this.prisma.coursClasse.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.coursClasse.delete({ where: { id } });
+
+      await this.audit.record(tx, {
+        action: 'DELETE',
+        entity: 'CoursClasse',
+        entityId: id,
+        actorId,
+        details: { coursId: association.coursId, classeId: association.classeId },
+      });
+    });
+
     this.logger.log(`Association CoursClasse supprimée : ${id}`);
   }
 

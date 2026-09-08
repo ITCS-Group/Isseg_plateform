@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, StatutEmprunt, StatutOuvrage } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { RegularityService } from '../../scolarite/regularity/regularity.service';
 import { TYPE_ABONNE_RULES } from '../common/loan-rules.constants';
@@ -45,6 +46,7 @@ export class EmpruntService {
     private readonly prisma: PrismaService,
     private readonly regularityService: RegularityService,
     private readonly config: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   // ── Lecture ───────────────────────────────────────────────────────────────
@@ -80,7 +82,7 @@ export class EmpruntService {
 
   // ── Création (emprunt) ───────────────────────────────────────────────────
 
-  async create(dto: CreateEmpruntDto): Promise<EmpruntResponseDto> {
+  async create(dto: CreateEmpruntDto, actorId: string): Promise<EmpruntResponseDto> {
     const ouvrage = await this.prisma.ouvrage.findUnique({ where: { id: dto.ouvrageId } });
     if (!ouvrage) {
       throw new NotFoundException(`Ouvrage introuvable (id: ${dto.ouvrageId})`);
@@ -168,6 +170,20 @@ export class EmpruntService {
         },
       });
 
+      // `emprunteurId` est l'EMPRUNTEUR, jamais l'acteur : c'est le
+      // bibliothécaire authentifié qui enregistre le prêt.
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Emprunt',
+        entityId: emprunt.id,
+        actorId,
+        details: {
+          ouvrageId: dto.ouvrageId,
+          emprunteurId: dto.emprunteurId,
+          dateRetourPrevue: dateRetourPrevue.toISOString(),
+        },
+      });
+
       return emprunt;
     });
 
@@ -177,7 +193,7 @@ export class EmpruntService {
 
   // ── Retour ────────────────────────────────────────────────────────────────
 
-  async retour(id: string): Promise<EmpruntResponseDto> {
+  async retour(id: string, actorId: string): Promise<EmpruntResponseDto> {
     const emprunt = await this.prisma.emprunt.findUnique({ where: { id }, select: EMPRUNT_SELECT });
     if (!emprunt) {
       throw new NotFoundException(`Emprunt introuvable (id: ${id})`);
@@ -214,6 +230,14 @@ export class EmpruntService {
           exemplairesDisponibles,
           statut: ouvrage.statut === StatutOuvrage.EMPRUNTE ? StatutOuvrage.DISPONIBLE : ouvrage.statut,
         },
+      });
+
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'Emprunt',
+        entityId: id,
+        actorId,
+        details: { statut: StatutEmprunt.RETOURNE, retardJours },
       });
 
       return row;

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreatePosteDto } from './dto/create-poste.dto';
 import { ListPosteQueryDto } from './dto/list-poste-query.dto';
@@ -18,8 +19,11 @@ export class PosteController {
   @ApiOperation({ summary: 'Enregistrer un nouveau poste' })
   @ApiBody({ type: CreatePosteDto })
   @ApiResponse({ status: 201, type: PosteResponseDto })
-  create(@Body() dto: CreatePosteDto): Promise<PosteResponseDto> {
-    return this.posteService.create(dto);
+  create(
+    @Body() dto: CreatePosteDto,
+    @CurrentUser('id') actorId: string,
+  ): Promise<PosteResponseDto> {
+    return this.posteService.create(dto, actorId);
   }
 
   @Get()
@@ -56,7 +60,8 @@ export class PosteController {
   updateStatut(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePosteStatutDto,
+    @CurrentUser('id') actorId: string,
   ): Promise<PosteResponseDto> {
-    return this.posteService.updateStatut(id, dto);
+    return this.posteService.updateStatut(id, dto, actorId);
   }
 }

@@ -44,8 +44,11 @@ export class EmpruntController {
   @ApiResponse({ status: 404, description: 'Ouvrage ou profil abonné introuvable' })
   @ApiResponse({ status: 409, description: 'Aucun exemplaire disponible ou quota atteint' })
   @ApiResponse({ status: 403, description: 'Étudiant non régulier ou abonnement inactif' })
-  create(@Body() dto: CreateEmpruntDto): Promise<EmpruntResponseDto> {
-    return this.empruntService.create(dto);
+  create(
+    @Body() dto: CreateEmpruntDto,
+    @CurrentUser('id') actorId: string,
+  ): Promise<EmpruntResponseDto> {
+    return this.empruntService.create(dto, actorId);
   }
 
   // ── PATCH /api/v1/emprunts/:id/retour ─────────────────────────────────────
@@ -57,7 +60,10 @@ export class EmpruntController {
   @ApiResponse({ status: 200, type: EmpruntResponseDto })
   @ApiResponse({ status: 404, description: 'Emprunt introuvable' })
   @ApiResponse({ status: 409, description: 'Emprunt déjà retourné' })
-  retour(@Param('id', ParseUUIDPipe) id: string): Promise<EmpruntResponseDto> {
-    return this.empruntService.retour(id);
+  retour(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') actorId: string,
+  ): Promise<EmpruntResponseDto> {
+    return this.empruntService.retour(id, actorId);
   }
 }

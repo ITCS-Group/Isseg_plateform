@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaClient, StatutValidation, TypeEpreuve } from '@prisma/client';
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
+import { AuditService } from '../../common/audit/audit.service';
 import { NoteEtudiantService } from './note-etudiant.service';
 
 // ── Utilitaires ──────────────────────────────────────────────────────────────
@@ -8,6 +9,11 @@ let seq = 0;
 const uid = (p: string) => `${p}-${Date.now()}-${seq++}`;
 
 let prisma: PrismaClient;
+/**
+ * Acteur des mutations, présent RÉELLEMENT en base : `AuditLog.utilisateurId`
+ * porte une clé étrangère vers `Utilisateur`.
+ */
+let acteurId: string;
 let service: NoteEtudiantService;
 
 /** Cours + classe + affectation + épreuve, avec l'enseignant réellement titulaire. */
@@ -74,7 +80,13 @@ async function makeInscription() {
   });
 }
 
-const ADMIN = { id: 'admin-int', roles: ['ADMIN'] };
+/**
+ * Acteur ADMIN des tests. Son identifiant doit correspondre à un utilisateur
+ * RÉEL depuis BACK-01 : l'audit métier écrit `AuditLog.utilisateurId`, qui
+ * porte une clé étrangère vers `Utilisateur`. Un identifiant fictif ferait
+ * échouer l'audit, et avec lui la transaction métier.
+ */
+let ADMIN: { id: string; roles: string[] };
 
 /** Pagination par défaut (cf. PaginationDto) — page 1, 20 éléments. */
 const PAGE_DEFAUT = { page: 1, limit: 20 };
@@ -95,7 +107,7 @@ async function makeAdminUtilisateur() {
 // ── Setup ────────────────────────────────────────────────────────────────────
 beforeAll(() => {
   prisma = createTestPrisma(); // garde-fou : refuse si != isseg_test
-  service = new NoteEtudiantService(prisma as never);
+  service = new NoteEtudiantService(prisma as never, new AuditService());
 });
 
 afterAll(async () => {
@@ -104,6 +116,18 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateAll(prisma);
+  ADMIN = await makeAdminUtilisateur();
+
+  const acteur = await prisma.utilisateur.create({
+    data: {
+      nom: 'Admin',
+      prenom: 'Acteur',
+      email: `acteur-audit-${Date.now()}-${Math.random()}@isseg-test.local`,
+      motDePasseHash: 'hash-non-significatif',
+      estActif: true,
+    },
+  });
+  acteurId = acteur.id;
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -116,8 +140,7 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
 
       const result = await service.create(
         { epreuveId: epreuve.id, inscriptionId: inscription.id, noteBrute: 14.5 },
-        { id: teacherUserId, roles: ['ENSEIGNANT'] },
-      );
+        { id: teacherUserId, roles: ['ENSEIGNANT'] },);
 
       expect(result.noteBrute).toBe(14.5);
       const persisted = await prisma.noteEtudiant.findUnique({ where: { id: result.id } });
@@ -131,8 +154,7 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
       await expect(
         service.create(
           { epreuveId: '00000000-0000-4000-8000-000000000000', inscriptionId: inscription.id, noteBrute: 10 },
-          ADMIN,
-        ),
+          ADMIN,),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(await prisma.noteEtudiant.count()).toBe(0);
     });
@@ -143,8 +165,7 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
       await expect(
         service.create(
           { epreuveId: epreuve.id, inscriptionId: '00000000-0000-4000-8000-000000000000', noteBrute: 10 },
-          ADMIN,
-        ),
+          ADMIN,),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(await prisma.noteEtudiant.count()).toBe(0);
     });
@@ -176,8 +197,7 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
       await expect(
         service.create(
           { epreuveId: epreuve.id, inscriptionId: inscription.id, noteBrute: 10 },
-          { id: 'un-autre-enseignant', roles: ['ENSEIGNANT'] },
-        ),
+          { id: 'un-autre-enseignant', roles: ['ENSEIGNANT'] },),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(await prisma.noteEtudiant.count()).toBe(0);
     });
@@ -188,8 +208,7 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
 
       const result = await service.create(
         { epreuveId: epreuve.id, inscriptionId: inscription.id, noteBrute: 12 },
-        { id: teacherUserId, roles: ['ENSEIGNANT'] },
-      );
+        { id: teacherUserId, roles: ['ENSEIGNANT'] },);
 
       expect(result.noteBrute).toBe(12);
     });
@@ -299,8 +318,7 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
       const inscription = await makeInscription();
       const created = await service.create(
         { epreuveId: epreuve.id, inscriptionId: inscription.id, noteBrute: 13 },
-        ADMIN,
-      );
+        ADMIN,);
 
       const result = await service.findOne(created.id);
 
@@ -321,8 +339,7 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
       const inscription = await makeInscription();
       const created = await service.create(
         { epreuveId: epreuve.id, inscriptionId: inscription.id, noteBrute: 10 },
-        { id: teacherUserId, roles: ['ENSEIGNANT'] },
-      );
+        { id: teacherUserId, roles: ['ENSEIGNANT'] },);
 
       const result = await service.update(
         created.id,
@@ -389,7 +406,7 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
   // ── remove ────────────────────────────────────────────────────────────────
   describe('remove', () => {
     it('note inexistante : 404', async () => {
-      await expect(service.remove('00000000-0000-4000-8000-000000000000')).rejects.toBeInstanceOf(
+      await expect(service.remove('00000000-0000-4000-8000-000000000000', acteurId)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -401,7 +418,7 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
       const admin = await makeAdminUtilisateur();
       await service.update(created.id, { noteBrute: 15 }, admin);
 
-      await expect(service.remove(created.id)).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.remove(created.id, acteurId)).rejects.toBeInstanceOf(ConflictException);
 
       expect(await prisma.noteEtudiant.findUnique({ where: { id: created.id } })).not.toBeNull();
       expect(await prisma.noteEtudiantHistory.count({ where: { noteEtudiantId: created.id } })).toBe(1);
@@ -412,9 +429,71 @@ describe('Intégration — NoteEtudiantService (isseg_test)', () => {
       const inscription = await makeInscription();
       const created = await service.create({ epreuveId: epreuve.id, inscriptionId: inscription.id, noteBrute: 10 }, ADMIN);
 
-      await service.remove(created.id);
+      await service.remove(created.id, acteurId);
 
       expect(await prisma.noteEtudiant.findUnique({ where: { id: created.id } })).toBeNull();
+    });
+  });
+
+  // ── Audit métier (BACK-01, lot 4) — vérifié en base ───────────────────────
+
+  describe('audit métier', () => {
+    async function auditsDe(entityId: string) {
+      return prisma.auditLog.findMany({
+        where: { entity: 'NoteEtudiant', entityId },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
+
+    it('create : CREATE attribué à l\'acteur, SANS la valeur de la note', async () => {
+      const { epreuve } = await makeScenario();
+      const inscription = await makeInscription();
+
+      const note = await service.create(
+        { epreuveId: epreuve.id, inscriptionId: inscription.id, noteBrute: 17.25 },
+        ADMIN,
+      );
+
+      const audits = await auditsDe(note.id);
+      expect(audits).toHaveLength(1);
+      expect(audits[0].action).toBe('CREATE');
+      expect(audits[0].utilisateurId).toBe(ADMIN.id);
+      // Frontière avec la traçabilité spécialisée : la VALEUR n'appartient pas
+      // à l'audit générique, elle relève de NoteEtudiantHistory.
+      expect(JSON.stringify(audits[0].details)).not.toContain('17.25');
+      expect(audits[0].details).toMatchObject({ epreuveId: epreuve.id });
+    });
+
+    it('update : aucun audit générique, NoteEtudiantHistory reste la seule trace', async () => {
+      const { epreuve } = await makeScenario();
+      const inscription = await makeInscription();
+      const note = await service.create(
+        { epreuveId: epreuve.id, inscriptionId: inscription.id, noteBrute: 10 },
+        ADMIN,
+      );
+
+      await service.update(note.id, { noteBrute: 12, motif: 'correction' }, ADMIN);
+
+      // Une seule entrée générique : celle de la création. La modification est
+      // volontairement absente, conformément à DEC-03.
+      expect((await auditsDe(note.id)).map((a) => a.action)).toEqual(['CREATE']);
+      expect(
+        await prisma.noteEtudiantHistory.count({ where: { noteEtudiantId: note.id } }),
+      ).toBeGreaterThan(0);
+    });
+
+    it('ATOMICITÉ : un audit impossible annule la création de la note', async () => {
+      const { epreuve } = await makeScenario();
+      const inscription = await makeInscription();
+
+      await expect(
+        service.create(
+          { epreuveId: epreuve.id, inscriptionId: inscription.id, noteBrute: 10 },
+          { id: '00000000-0000-0000-0000-000000000000', roles: ['ADMIN'] },
+        ),
+      ).rejects.toBeDefined();
+
+      expect(await prisma.noteEtudiant.count({ where: { epreuveId: epreuve.id } })).toBe(0);
     });
   });
 });

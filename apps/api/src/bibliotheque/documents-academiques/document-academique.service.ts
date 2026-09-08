@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateDocumentAcademiqueDto } from './dto/create-document-academique.dto';
 import {
@@ -41,7 +42,10 @@ type DocumentRow = Prisma.DocumentAcademiqueGetPayload<{ select: typeof DOCUMENT
 export class DocumentAcademiqueService {
   private readonly logger = new Logger(DocumentAcademiqueService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
@@ -96,7 +100,10 @@ export class DocumentAcademiqueService {
 
   // ── Création ──────────────────────────────────────────────────────────────
 
-  async create(dto: CreateDocumentAcademiqueDto): Promise<DocumentAcademiqueResponseDto> {
+  async create(
+    dto: CreateDocumentAcademiqueDto,
+    actorId: string,
+  ): Promise<DocumentAcademiqueResponseDto> {
     const auteur = await this.prisma.etudiant.findUnique({ where: { id: dto.auteurId } });
     if (!auteur) {
       throw new NotFoundException(`Etudiant introuvable (id: ${dto.auteurId})`);
@@ -108,7 +115,8 @@ export class DocumentAcademiqueService {
       }
     }
 
-    const created = await this.prisma.documentAcademique.create({
+    const created = await this.prisma.$transaction(async (tx) => {
+      const doc = await tx.documentAcademique.create({
       data: {
         type: dto.type,
         titre: dto.titre,
@@ -124,6 +132,18 @@ export class DocumentAcademiqueService {
         directeurMemoireId: dto.directeurMemoireId,
       },
       select: DOCUMENT_SELECT,
+      });
+
+      // `auteurId` est l'étudiant auteur du mémoire, pas l'auteur de l'action.
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'DocumentAcademique',
+        entityId: doc.id,
+        actorId,
+        details: { type: doc.type, titre: doc.titre, auteurId: dto.auteurId },
+      });
+
+      return doc;
     });
 
     this.logger.log(`DocumentAcademique créé (titre: ${created.titre})`);
@@ -132,7 +152,11 @@ export class DocumentAcademiqueService {
 
   // ── Modification ──────────────────────────────────────────────────────────
 
-  async update(id: string, dto: UpdateDocumentAcademiqueDto): Promise<DocumentAcademiqueResponseDto> {
+  async update(
+    id: string,
+    dto: UpdateDocumentAcademiqueDto,
+    actorId: string,
+  ): Promise<DocumentAcademiqueResponseDto> {
     await this.findRowOrThrow(id);
 
     if (dto.directeurMemoireId) {
@@ -142,7 +166,8 @@ export class DocumentAcademiqueService {
       }
     }
 
-    const updated = await this.prisma.documentAcademique.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.documentAcademique.update({
       where: { id },
       data: {
         type: dto.type,
@@ -154,6 +179,17 @@ export class DocumentAcademiqueService {
         directeurMemoireId: dto.directeurMemoireId,
       },
       select: DOCUMENT_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'DocumentAcademique',
+        entityId: id,
+        actorId,
+        details: { champsModifies: Object.keys(dto) },
+      });
+
+      return row;
     });
 
     this.logger.log(`DocumentAcademique modifié : ${id}`);

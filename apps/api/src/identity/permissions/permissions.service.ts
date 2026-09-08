@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { ListPermissionQueryDto } from './dto/list-permission-query.dto';
@@ -29,7 +30,10 @@ type PermissionRow = Prisma.PermissionGetPayload<{ select: typeof PERMISSION_SEL
 export class PermissionsService {
   private readonly logger = new Logger(PermissionsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
@@ -65,12 +69,27 @@ export class PermissionsService {
 
   // ── Création ──────────────────────────────────────────────────────────────
 
-  async create(dto: CreatePermissionDto): Promise<PermissionResponseDto> {
+  async create(
+    dto: CreatePermissionDto,
+    actorId: string,
+  ): Promise<PermissionResponseDto> {
     await this.assertNameFree(dto.nomPermission);
 
-    const perm = await this.prisma.permission.create({
-      data: dto,
-      select: PERMISSION_SELECT,
+    const perm = await this.prisma.$transaction(async (tx) => {
+      const cree = await tx.permission.create({
+        data: dto,
+        select: PERMISSION_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Permission',
+        entityId: cree.id,
+        actorId,
+        details: { nomPermission: cree.nomPermission },
+      });
+
+      return cree;
     });
 
     this.logger.log(`Permission créée : ${perm.nomPermission}`);
@@ -79,15 +98,31 @@ export class PermissionsService {
 
   // ── Mise à jour ───────────────────────────────────────────────────────────
 
-  async update(id: string, dto: UpdatePermissionDto): Promise<PermissionResponseDto> {
+  async update(
+    id: string,
+    dto: UpdatePermissionDto,
+    actorId: string,
+  ): Promise<PermissionResponseDto> {
     await this.findRowOrThrow(id);
 
     if (dto.nomPermission) await this.assertNameFree(dto.nomPermission, id);
 
-    const perm = await this.prisma.permission.update({
-      where: { id },
-      data: dto,
-      select: PERMISSION_SELECT,
+    const perm = await this.prisma.$transaction(async (tx) => {
+      const modifie = await tx.permission.update({
+        where: { id },
+        data: dto,
+        select: PERMISSION_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'Permission',
+        entityId: id,
+        actorId,
+        details: { champsModifies: Object.keys(dto) },
+      });
+
+      return modifie;
     });
 
     return this.toDto(perm);
@@ -95,8 +130,9 @@ export class PermissionsService {
 
   // ── Suppression ───────────────────────────────────────────────────────────
 
-  async remove(id: string): Promise<void> {
-    await this.findRowOrThrow(id);
+  async remove(id: string, actorId: string): Promise<void> {
+    // Nom capturé AVANT la suppression, pour ne pas relire une ligne effacée.
+    const permission = await this.findRowOrThrow(id);
 
     const rolesCount = await this.prisma.rolePermission.count({
       where: { permissionId: id },
@@ -108,7 +144,18 @@ export class PermissionsService {
       );
     }
 
-    await this.prisma.permission.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.permission.delete({ where: { id } });
+
+      await this.audit.record(tx, {
+        action: 'DELETE',
+        entity: 'Permission',
+        entityId: id,
+        actorId,
+        details: { nomPermission: permission.nomPermission },
+      });
+    });
+
     this.logger.log(`Permission supprimée : ${id}`);
   }
 

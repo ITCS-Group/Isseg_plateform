@@ -60,7 +60,8 @@ export class InscriptionController {
   evaluer(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateEvaluationSupportITDto,
+    @CurrentUser('id') actorId: string,
   ): Promise<EvaluationSupportITResponseDto> {
-    return this.inscriptionService.evaluer(id, dto);
+    return this.inscriptionService.evaluer(id, dto, actorId);
   }
 }

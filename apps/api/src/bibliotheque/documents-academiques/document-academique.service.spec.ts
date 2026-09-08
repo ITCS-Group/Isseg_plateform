@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { TypeDocumentAcademique } from '@prisma/client';
+import { AuditService } from '../../common/audit/audit.service';
 import { DocumentAcademiqueService } from './document-academique.service';
 
 interface PrismaMock {
@@ -12,6 +13,11 @@ interface PrismaMock {
     update: jest.Mock;
     count: jest.Mock;
   };
+  auditLog: {
+    create: jest.Mock;
+  };
+  /** Transaction interactive : le callback reçoit le mock lui-même. */
+  $transaction: jest.Mock;
 }
 
 /** Pagination par défaut (cf. PaginationDto) — page 1, 20 éléments. */
@@ -38,8 +44,12 @@ const DOC_ROW = {
   auteur: { utilisateur: { nom: 'N', prenom: 'P' } },
 };
 
+/** Acteur des mutations. Prisma est mocké : aucune contrainte de clé étrangère. */
+const acteurId = 'acteur-1';
+
 describe('DocumentAcademiqueService', () => {
   let service: DocumentAcademiqueService;
+  let audit: AuditService;
   let prisma: PrismaMock;
 
   beforeEach(() => {
@@ -53,9 +63,25 @@ describe('DocumentAcademiqueService', () => {
         update: jest.fn().mockResolvedValue(DOC_ROW),
         count: jest.fn().mockResolvedValue(0),
       },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new DocumentAcademiqueService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new DocumentAcademiqueService(prisma as never, audit);
   });
+
+  /** Dernière entrée soumise à AuditService, et client utilisé pour l'écrire. */
+  function dernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][1];
+  }
+  function clientDuDernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][0];
+  }
 
   describe('create', () => {
     it('auteur (Etudiant) introuvable → NotFoundException', async () => {
@@ -71,7 +97,7 @@ describe('DocumentAcademiqueService', () => {
           motsCles: ['x'],
           resume: 'r',
           auteurId: 'x',
-        }),
+        }, acteurId),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -89,7 +115,7 @@ describe('DocumentAcademiqueService', () => {
           resume: 'r',
           auteurId: 'etu-1',
           directeurMemoireId: 'ens-x',
-        }),
+        }, acteurId),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
@@ -213,6 +239,47 @@ describe('DocumentAcademiqueService', () => {
       prisma.documentAcademique.findUnique.mockResolvedValue({ ...DOC_ROW, diffusionAutorisee: false });
       const result = await service.findOne('doc-1', { roles: ['ADMIN'] });
       expect(result.id).toBe('doc-1');
+    });
+  });
+
+  // ── Audit métier (BACK-01, lot 3) ──────────────────────────────────────────
+
+  describe('audit métier', () => {
+    it('create : CREATE sur le document, l\'étudiant auteur restant un détail', async () => {
+      await service.create({
+        type: 'MEMOIRE',
+        titre: 'Titre',
+        anneeUniversitaire: '2025-2026',
+        filiere: 'F',
+        niveau: 'M2',
+        urlPdf: 'https://x/y.pdf',
+        motsCles: ['a'],
+        auteurId: 'etu-1',
+      } as never, acteurId);
+
+      const e = dernierAudit();
+      expect(e.action).toBe('CREATE');
+      expect(e.entity).toBe('DocumentAcademique');
+      expect(e.actorId).toBe(acteurId);
+      // L'étudiant auteur du mémoire n'est pas l'auteur de l'action.
+      expect(e.details).toMatchObject({ auteurId: 'etu-1' });
+      expect(e.actorId).not.toBe('etu-1');
+    });
+
+    it('update : UPDATE, seuls les noms des champs modifiés', async () => {
+      await service.update('doc-1', { titre: 'Nouveau' } as never, acteurId);
+
+      const e = dernierAudit();
+      expect(e.action).toBe('UPDATE');
+      expect(e.entityId).toBe('doc-1');
+      expect(e.details).toEqual({ champsModifies: ['titre'] });
+    });
+
+    it('l\'audit passe par le client de la transaction', async () => {
+      await service.update('doc-1', { titre: 'X' } as never, acteurId);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(clientDuDernierAudit()).toBe(prisma);
     });
   });
 });

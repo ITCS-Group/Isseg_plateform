@@ -19,6 +19,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { ListRoleQueryDto } from './dto/list-role-query.dto';
@@ -49,8 +50,11 @@ export class RolesController {
   @ApiBody({ type: CreateRoleDto })
   @ApiResponse({ status: 201, type: RoleResponseDto })
   @ApiResponse({ status: 409, description: 'Nom de rôle déjà utilisé' })
-  create(@Body() dto: CreateRoleDto): Promise<RoleResponseDto> {
-    return this.rolesService.create(dto);
+  create(
+    @Body() dto: CreateRoleDto,
+    @CurrentUser('id') actorId: string,
+  ): Promise<RoleResponseDto> {
+    return this.rolesService.create(dto, actorId);
   }
 
   // ── GET /api/v1/roles/:id ────────────────────────────────────────────────
@@ -74,8 +78,9 @@ export class RolesController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRoleDto,
+    @CurrentUser('id') actorId: string,
   ): Promise<RoleResponseDto> {
-    return this.rolesService.update(id, dto);
+    return this.rolesService.update(id, dto, actorId);
   }
 
   // ── DELETE /api/v1/roles/:id ─────────────────────────────────────────────
@@ -89,8 +94,11 @@ export class RolesController {
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Rôle supprimé' })
   @ApiResponse({ status: 409, description: 'Rôle encore utilisé par des utilisateurs' })
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.rolesService.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') actorId: string,
+  ): Promise<void> {
+    return this.rolesService.remove(id, actorId);
   }
 
   // ── POST /api/v1/roles/:id/permissions/:permissionId ────────────────────
@@ -103,8 +111,9 @@ export class RolesController {
   assignPermission(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('permissionId', ParseUUIDPipe) permissionId: string,
+    @CurrentUser('id') actorId: string,
   ): Promise<RoleResponseDto> {
-    return this.rolesService.assignPermission(id, permissionId);
+    return this.rolesService.assignPermission(id, permissionId, actorId);
   }
 
   // ── DELETE /api/v1/roles/:id/permissions/:permissionId ──────────────────
@@ -117,7 +126,8 @@ export class RolesController {
   removePermission(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('permissionId', ParseUUIDPipe) permissionId: string,
+    @CurrentUser('id') actorId: string,
   ): Promise<RoleResponseDto> {
-    return this.rolesService.removePermission(id, permissionId);
+    return this.rolesService.removePermission(id, permissionId, actorId);
   }
 }

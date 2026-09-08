@@ -19,6 +19,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -51,8 +52,11 @@ export class UsersController {
   @ApiBody({ type: CreateUserDto })
   @ApiResponse({ status: 201, type: UserResponseDto })
   @ApiResponse({ status: 409, description: 'Email déjà utilisé' })
-  create(@Body() dto: CreateUserDto): Promise<UserResponseDto> {
-    return this.usersService.create(dto);
+  create(
+    @Body() dto: CreateUserDto,
+    @CurrentUser('id') actorId: string,
+  ): Promise<UserResponseDto> {
+    return this.usersService.create(dto, actorId);
   }
 
   // ── GET /api/v1/utilisateurs/:id ────────────────────────────────────────────────
@@ -78,8 +82,9 @@ export class UsersController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserDto,
+    @CurrentUser('id') actorId: string,
   ): Promise<UserResponseDto> {
-    return this.usersService.update(id, dto);
+    return this.usersService.update(id, dto, actorId);
   }
 
   // ── DELETE /api/v1/utilisateurs/:id ─────────────────────────────────────────────
@@ -92,8 +97,11 @@ export class UsersController {
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Utilisateur désactivé' })
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.usersService.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') actorId: string,
+  ): Promise<void> {
+    return this.usersService.remove(id, actorId);
   }
 
   // ── PATCH /api/v1/utilisateurs/:id/password ────────────────────────────────────
@@ -110,8 +118,9 @@ export class UsersController {
   changePassword(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ChangePasswordDto,
+    @CurrentUser('id') actorId: string,
   ): Promise<void> {
-    return this.usersService.changePassword(id, dto);
+    return this.usersService.changePassword(id, dto, actorId);
   }
 
   // ── POST /api/v1/utilisateurs/:id/roles/:roleId ─────────────────────────────────
@@ -125,8 +134,9 @@ export class UsersController {
   assignRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('roleId', ParseUUIDPipe) roleId: string,
+    @CurrentUser('id') actorId: string,
   ): Promise<UserResponseDto> {
-    return this.usersService.assignRole(id, roleId);
+    return this.usersService.assignRole(id, roleId, actorId);
   }
 
   // ── DELETE /api/v1/utilisateurs/:id/roles/:roleId ───────────────────────────────
@@ -140,7 +150,8 @@ export class UsersController {
   removeRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('roleId', ParseUUIDPipe) roleId: string,
+    @CurrentUser('id') actorId: string,
   ): Promise<UserResponseDto> {
-    return this.usersService.removeRole(id, roleId);
+    return this.usersService.removeRole(id, roleId, actorId);
   }
 }

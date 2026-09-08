@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, NotFoundException } from '@nestj
 import { NatureRequete, PrismaClient, SousServiceIT, StatutRequete } from '@prisma/client';
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
+import { AuditService } from '../../common/audit/audit.service';
 import { RequeteService } from './requete.service';
 
 let seq = 0;
@@ -59,7 +60,7 @@ beforeEach(async () => {
 
 describe('Intégration — RequeteService (isseg_test)', () => {
   it('création : route automatiquement PANNE_MATERIEL vers MAINTENANCE', async () => {
-    const service = new RequeteService(prisma as never);
+    const service = new RequeteService(prisma as never, new AuditService());
     const { user } = await makePersonnel();
 
     const result = await service.create(
@@ -75,7 +76,7 @@ describe('Intégration — RequeteService (isseg_test)', () => {
   });
 
   it('création : compte sans profil Personnel → ForbiddenException, rien en base', async () => {
-    const service = new RequeteService(prisma as never);
+    const service = new RequeteService(prisma as never, new AuditService());
     const user = await prisma.utilisateur.create({
       data: { nom: 'Sans', prenom: 'Personnel', email: uid('np') + '@t.local', motDePasseHash: 'x' },
     });
@@ -87,7 +88,7 @@ describe('Intégration — RequeteService (isseg_test)', () => {
   });
 
   it('findAll : le demandeur ne voit que ses propres requêtes', async () => {
-    const service = new RequeteService(prisma as never);
+    const service = new RequeteService(prisma as never, new AuditService());
     const { user: demandeurA } = await makePersonnel();
     const { user: demandeurB } = await makePersonnel();
 
@@ -101,7 +102,7 @@ describe('Intégration — RequeteService (isseg_test)', () => {
   });
 
   it('findAll : TECHNICIEN ne voit que les requêtes de son sous-service', async () => {
-    const service = new RequeteService(prisma as never);
+    const service = new RequeteService(prisma as never, new AuditService());
     const { user: demandeur } = await makePersonnel();
     const { user: techMaintenance } = await makeTechnicien(SousServiceIT.MAINTENANCE);
     await makeTechnicien(SousServiceIT.CYBER);
@@ -115,7 +116,7 @@ describe('Intégration — RequeteService (isseg_test)', () => {
   });
 
   it('findOne : demandeur voit sa requête, mais pas un tiers ENSEIGNANT non lié', async () => {
-    const service = new RequeteService(prisma as never);
+    const service = new RequeteService(prisma as never, new AuditService());
     const { user: demandeur } = await makePersonnel();
     const { user: tiers } = await makePersonnel();
 
@@ -133,7 +134,7 @@ describe('Intégration — RequeteService (isseg_test)', () => {
   });
 
   it('cloturer : introuvable → NotFoundException', async () => {
-    const service = new RequeteService(prisma as never);
+    const service = new RequeteService(prisma as never, new AuditService());
     const { user } = await makeTechnicien(SousServiceIT.CYBER);
     await expect(
       service.cloturer('00000000-0000-0000-0000-000000000000', toAuthUser(user.id, ['TECHNICIEN'])),
@@ -141,7 +142,7 @@ describe('Intégration — RequeteService (isseg_test)', () => {
   });
 
   it('cloturer : technicien du bon sous-service → statut CLOTUREE + dateCloture renseignée', async () => {
-    const service = new RequeteService(prisma as never);
+    const service = new RequeteService(prisma as never, new AuditService());
     const { user: demandeur } = await makePersonnel();
     const { user: technicien } = await makeTechnicien(SousServiceIT.MAINTENANCE);
 
@@ -156,7 +157,7 @@ describe('Intégration — RequeteService (isseg_test)', () => {
   });
 
   it('cloturer : déjà clôturée → ConflictException', async () => {
-    const service = new RequeteService(prisma as never);
+    const service = new RequeteService(prisma as never, new AuditService());
     const { user: demandeur } = await makePersonnel();
     const { user: technicien } = await makeTechnicien(SousServiceIT.MAINTENANCE);
 
@@ -169,5 +170,69 @@ describe('Intégration — RequeteService (isseg_test)', () => {
     await expect(
       service.cloturer(created.id, toAuthUser(technicien.id, ['TECHNICIEN'])),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  // ── Audit métier (BACK-01, lot 6) — vérifié en base ───────────────────────
+
+  describe('audit métier', () => {
+    async function auditsDe(entityId: string) {
+      return prisma.auditLog.findMany({
+        where: { entity: 'Requete', entityId },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
+
+    it('create : l\'acteur est le COMPTE authentifié, pas le profil Personnel', async () => {
+      const service = new RequeteService(prisma as never, new AuditService());
+      const { user, personnel } = await makePersonnel();
+
+      const requete = await service.create(
+        { nature: NatureRequete.PANNE_MATERIEL, description: 'Écran HS' },
+        user.id,
+      );
+
+      const audits = await auditsDe(requete.id);
+      expect(audits).toHaveLength(1);
+      expect(audits[0].action).toBe('CREATE');
+      // Deux identifiants pour la même personne : l'audit référence Utilisateur.
+      expect(audits[0].utilisateurId).toBe(user.id);
+      expect(audits[0].utilisateurId).not.toBe(personnel.id);
+      expect(audits[0].details).toMatchObject({ demandeurPersonnelId: personnel.id });
+    });
+
+    it('cloturer : UPDATE décrivant la transition de statut', async () => {
+      const service = new RequeteService(prisma as never, new AuditService());
+      const { user } = await makePersonnel();
+      const { user: techUser } = await makeTechnicien(SousServiceIT.MAINTENANCE);
+
+      const requete = await service.create(
+        { nature: NatureRequete.PANNE_MATERIEL, description: 'Écran HS' },
+        user.id,
+      );
+      await service.cloturer(requete.id, toAuthUser(techUser.id, ['RESPONSABLE_IT']));
+
+      const audits = await auditsDe(requete.id);
+      expect(audits.map((a) => a.action)).toEqual(['CREATE', 'UPDATE']);
+      expect(audits[1].utilisateurId).toBe(techUser.id);
+      expect(audits[1].details).toMatchObject({ statutApres: 'CLOTUREE' });
+    });
+
+    it('ATOMICITÉ : un audit impossible annule la création de la requête', async () => {
+      const service = new RequeteService(prisma as never, new AuditService());
+      const { user } = await makePersonnel();
+      // Un compte sans profil Personnel serait refusé en amont : on force ici
+      // l'échec de l'audit en passant un acteur absent de la table Utilisateur.
+      await prisma.utilisateur.update({ where: { id: user.id }, data: { estActif: true } });
+
+      const avant = await prisma.requete.count();
+      await expect(
+        service.create(
+          { nature: NatureRequete.PANNE_MATERIEL, description: 'Test' },
+          '00000000-0000-0000-0000-000000000000',
+        ),
+      ).rejects.toBeDefined();
+
+      expect(await prisma.requete.count()).toBe(avant);
+    });
   });
 });

@@ -7,6 +7,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './auth/guards/permissions.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { BibliothequeModule } from './bibliotheque/bibliotheque.module';
+import { AuditModule } from './common/audit/audit.module';
 import configuration from './config/configuration';
 import { PrismaModule } from './database/prisma/prisma.module';
 import { IdentityModule } from './identity/identity.module';
@@ -31,6 +32,9 @@ import { SupportItModule } from './support-it/support-it.module';
 
     // ── Base de données (global — PrismaService disponible partout) ────────
     PrismaModule,
+
+    // ── Audit métier (global — AuditService disponible partout) ────────────
+    AuditModule,
 
     // ── Authentification & RBAC ────────────────────────────────────────────
     AuthModule,

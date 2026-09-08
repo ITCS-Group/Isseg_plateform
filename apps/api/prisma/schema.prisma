@@ -47,6 +47,7 @@ enum StatutValidation {
 }
 
 enum AuditAction {
+  // Actions d'authentification, écrites par AuthService. Ne pas les retirer.
   LOGIN_SUCCESS
   LOGIN_FAILED
   LOGOUT
@@ -55,6 +56,13 @@ enum AuditAction {
   ACCOUNT_LOCKED
   ACCOUNT_UNLOCKED
   PASSWORD_CHANGED
+
+  // Actions métier génériques. Le type d'entité est porté par AuditLog.entity
+  // et non par une valeur d'enum par entité, sans quoi l'enum devrait grossir
+  // à chaque nouvelle entité auditée.
+  CREATE
+  UPDATE
+  DELETE
 }
 
 enum OutboxEventStatus {
@@ -164,8 +172,17 @@ model RefreshToken {
 
 model AuditLog {
   id            String      @id @default(uuid())
+  /// Acteur de l'action. Pour les journaux d'authentification, c'est le compte concerné.
   utilisateurId String?
   action        AuditAction
+  /// Type de l'entité cible, ex. « Utilisateur », « Role ». Chaîne libre en base,
+  /// contrainte par une union TypeScript côté AuditService : un enum imposerait
+  /// une migration à chaque nouvelle entité auditée.
+  entity        String?
+  /// Identifiant de l'entité cible. Volontairement SANS clé étrangère : la table
+  /// visée dépend de `entity`, et un journal d'audit doit survivre à la
+  /// suppression de ce qu'il décrit.
+  entityId      String?
   ipAddress     String?
   userAgent     String?
   details       Json?
@@ -174,6 +191,7 @@ model AuditLog {
   utilisateur Utilisateur? @relation(fields: [utilisateurId], references: [id], onDelete: SetNull)
 
   @@index([utilisateurId, action, createdAt])
+  @@index([entity, entityId, createdAt])
 }
 
 // ----------------------------------------------------

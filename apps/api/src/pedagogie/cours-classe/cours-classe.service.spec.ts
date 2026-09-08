@@ -1,5 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { StatutValidation } from '@prisma/client';
+import { AuditService } from '../../common/audit/audit.service';
 import { CoursClasseService } from './cours-classe.service';
 
 // ── Mock Prisma ───────────────────────────────────────────────────────────────
@@ -15,6 +16,11 @@ interface PrismaMock {
   classe: { findUnique: jest.Mock };
   epreuve: { count: jest.Mock };
   enseignant: { findFirst: jest.Mock };
+  auditLog: {
+    create: jest.Mock;
+  };
+  /** Transaction interactive : le callback reçoit le mock lui-même. */
+  $transaction: jest.Mock;
 }
 
 const COURS_ID = 'cours-1';
@@ -53,8 +59,12 @@ function makeDto(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** Acteur des mutations. Prisma est mocké : aucune contrainte de clé étrangère. */
+const acteurId = 'acteur-1';
+
 describe('CoursClasseService', () => {
   let service: CoursClasseService;
+  let audit: AuditService;
   let prisma: PrismaMock;
 
   beforeEach(() => {
@@ -70,9 +80,25 @@ describe('CoursClasseService', () => {
       classe: { findUnique: jest.fn() },
       epreuve: { count: jest.fn() },
       enseignant: { findFirst: jest.fn() },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new CoursClasseService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new CoursClasseService(prisma as never, audit);
   });
+
+  /** Dernière entrée soumise à AuditService, et client utilisé pour l'écrire. */
+  function dernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][1];
+  }
+  function clientDuDernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][0];
+  }
 
   // ── findAll ───────────────────────────────────────────────────────────────
   describe('findAll', () => {
@@ -247,7 +273,7 @@ describe('CoursClasseService', () => {
     it('lève NotFoundException si le CoursScenarise est introuvable', async () => {
       prisma.coursScenarise.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(dto)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.create(dto, acteurId)).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.classe.findUnique).not.toHaveBeenCalled();
       expect(prisma.coursClasse.create).not.toHaveBeenCalled();
     });
@@ -259,7 +285,7 @@ describe('CoursClasseService', () => {
       });
       prisma.classe.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(dto)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.create(dto, acteurId)).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.coursClasse.create).not.toHaveBeenCalled();
     });
 
@@ -270,7 +296,7 @@ describe('CoursClasseService', () => {
       });
       prisma.classe.findUnique.mockResolvedValue({ id: CLASSE_ID });
 
-      await expect(service.create(dto)).rejects.toMatchObject({
+      await expect(service.create(dto, acteurId)).rejects.toMatchObject({
         message: 'Le cours doit être approuvé avant de pouvoir être associé à une classe.',
       });
       expect(prisma.coursClasse.create).not.toHaveBeenCalled();
@@ -284,7 +310,7 @@ describe('CoursClasseService', () => {
       prisma.classe.findUnique.mockResolvedValue({ id: CLASSE_ID });
       prisma.coursClasse.findUnique.mockResolvedValue(makeRow());
 
-      await expect(service.create(dto)).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.create(dto, acteurId)).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.coursClasse.create).not.toHaveBeenCalled();
     });
 
@@ -297,7 +323,7 @@ describe('CoursClasseService', () => {
       prisma.coursClasse.findUnique.mockResolvedValue(null);
       prisma.coursClasse.create.mockResolvedValue(makeRow());
 
-      const result = await service.create(dto);
+      const result = await service.create(dto, acteurId);
 
       expect(prisma.coursClasse.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: { coursId: COURS_ID, classeId: CLASSE_ID } }),
@@ -311,7 +337,7 @@ describe('CoursClasseService', () => {
     it('lève NotFoundException si l’association est absente', async () => {
       prisma.coursClasse.findUnique.mockResolvedValue(null);
 
-      await expect(service.remove('absent')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.remove('absent', acteurId)).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.coursClasse.delete).not.toHaveBeenCalled();
     });
 
@@ -319,7 +345,7 @@ describe('CoursClasseService', () => {
       prisma.coursClasse.findUnique.mockResolvedValue(makeRow());
       prisma.epreuve.count.mockResolvedValue(2);
 
-      await expect(service.remove(ASSOCIATION_ID)).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.remove(ASSOCIATION_ID, acteurId)).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.coursClasse.delete).not.toHaveBeenCalled();
     });
 
@@ -328,9 +354,61 @@ describe('CoursClasseService', () => {
       prisma.epreuve.count.mockResolvedValue(0);
       prisma.coursClasse.delete.mockResolvedValue(makeRow());
 
-      await service.remove(ASSOCIATION_ID);
+      await service.remove(ASSOCIATION_ID, acteurId);
 
       expect(prisma.coursClasse.delete).toHaveBeenCalledWith({ where: { id: ASSOCIATION_ID } });
+    });
+  });
+
+  // ── Audit métier (BACK-01, lot 4) ──────────────────────────────────────────
+
+  describe('audit métier', () => {
+    it('create : CREATE sur l\'association, attribué à l\'acteur', async () => {
+      prisma.coursScenarise.findUnique.mockResolvedValue({ id: 'cours-1', statutValidation: 'APPROUVE' });
+      prisma.classe.findUnique.mockResolvedValue({ id: 'classe-1' });
+      prisma.coursClasse.findUnique.mockResolvedValue(null);
+      prisma.coursClasse.create.mockResolvedValue({
+        id: 'cc-1',
+        coursId: 'cours-1',
+        classeId: 'classe-1',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        cours: { codeCours: 'SEDU-101', titre: 'Cours', enseignantId: 'ens-1' },
+        classe: { codeClasse: 'L3-A', libelle: 'Licence 3 A', niveau: 'L3' },
+      });
+      await service.create({ coursId: 'cours-1', classeId: 'classe-1' } as never, acteurId);
+
+      const e = dernierAudit();
+      expect(e.action).toBe('CREATE');
+      expect(e.entity).toBe('CoursClasse');
+      expect(e.actorId).toBe(acteurId);
+      expect(e.details).toMatchObject({ coursId: 'cours-1', classeId: 'classe-1' });
+    });
+
+    it('remove : DELETE conservant cours et classe capturés avant suppression', async () => {
+      prisma.coursClasse.findUnique.mockResolvedValue({ id: 'cc-1', coursId: 'cours-1', classeId: 'classe-1' });
+      prisma.epreuve.count.mockResolvedValue(0);
+      await service.remove('cc-1', acteurId);
+
+      const e = dernierAudit();
+      expect(e.action).toBe('DELETE');
+      expect(e.entity).toBe('CoursClasse');
+      expect(e.entityId).toBe('cc-1');
+    });
+
+    it('l\'audit passe par le client de la transaction', async () => {
+      prisma.coursClasse.findUnique.mockResolvedValue({ id: 'cc-1', coursId: 'cours-1', classeId: 'classe-1' });
+      prisma.epreuve.count.mockResolvedValue(0);
+      await service.remove('cc-1', acteurId);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(clientDuDernierAudit()).toBe(prisma);
+    });
+
+    it('un refus métier avant la transaction n\'écrit aucun audit', async () => {
+      prisma.epreuve.count.mockResolvedValue(3);
+
+      await expect(service.remove('cc-1', acteurId)).rejects.toBeDefined();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 });

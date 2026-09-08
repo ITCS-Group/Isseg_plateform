@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaClient, StatutEmprunt, StatutOuvrage, StatutPaiement, StatutTransaction, TypeAbonne } from '@prisma/client';
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
 import { RegularityService } from '../../scolarite/regularity/regularity.service';
+import { AuditService } from '../../common/audit/audit.service';
 import { EmpruntService } from './emprunt.service';
 
 let seq = 0;
@@ -10,10 +11,21 @@ const uid = (p: string) => `${p}-${Date.now()}-${seq++}`;
 
 let prisma: PrismaClient;
 
+/**
+ * Acteur des mutations, présent RÉELLEMENT en base : `AuditLog.utilisateurId`
+ * porte une clé étrangère vers `Utilisateur`.
+ */
+let acteurId: string;
+
 /** Service avec la config par défaut : seul ENSEIGNANT emprunte à domicile. */
 function makeService(typesAutorises: string[] = ['ENSEIGNANT']) {
   const config = new ConfigService({ bibliotheque: { empruntDomicileTypesAutorises: typesAutorises } });
-  return new EmpruntService(prisma as never, new RegularityService(prisma as never), config);
+  return new EmpruntService(
+    prisma as never,
+    new RegularityService(prisma as never),
+    config,
+    new AuditService(),
+  );
 }
 
 interface FraisOpts {
@@ -113,6 +125,17 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateAll(prisma);
+
+  const acteur = await prisma.utilisateur.create({
+    data: {
+      nom: 'Bibliothecaire',
+      prenom: 'Acteur',
+      email: `acteur-audit-${Date.now()}@isseg-test.local`,
+      motDePasseHash: 'hash-non-significatif',
+      estActif: true,
+    },
+  });
+  acteurId = acteur.id;
 });
 
 describe('Intégration — EmpruntService (isseg_test)', () => {
@@ -125,7 +148,7 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
       const { user } = await makeEtudiantAbonne();
 
       await expect(
-        service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }),
+        service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }, acteurId),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       const ouvrageApres = await prisma.ouvrage.findUniqueOrThrow({ where: { id: ouvrage.id } });
@@ -139,7 +162,7 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
       const ouvrage = await makeOuvrage(section.id, 2);
       const { user } = await makeEnseignantAbonne();
 
-      const result = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
+      const result = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }, acteurId);
       expect(result.statut).toBe(StatutEmprunt.EN_COURS);
     });
 
@@ -149,7 +172,7 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
       const ouvrage = await makeOuvrage(section.id, 2);
       const { user } = await makeEtudiantAbonne();
 
-      const result = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
+      const result = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }, acteurId);
       expect(result.statut).toBe(StatutEmprunt.EN_COURS);
     });
   });
@@ -160,7 +183,7 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     const ouvrage = await makeOuvrage(section.id, 2);
     const { user, abonne } = await makeEnseignantAbonne();
 
-    const result = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
+    const result = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }, acteurId);
 
     expect(result.statut).toBe(StatutEmprunt.EN_COURS);
     expect(result.emprunteurId).toBe(user.id);
@@ -178,7 +201,7 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     const ouvrage = await makeOuvrage(section.id, 1);
     const { user } = await makeEnseignantAbonne();
 
-    await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
+    await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }, acteurId);
 
     const ouvrageApres = await prisma.ouvrage.findUniqueOrThrow({ where: { id: ouvrage.id } });
     expect(ouvrageApres.exemplairesDisponibles).toBe(0);
@@ -192,7 +215,7 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     const { user } = await makeEtudiantAbonne({ statutPaiement: StatutPaiement.EN_ATTENTE });
 
     await expect(
-      service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }),
+      service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }, acteurId),
     ).rejects.toBeInstanceOf(ForbiddenException);
 
     const ouvrageApres = await prisma.ouvrage.findUniqueOrThrow({ where: { id: ouvrage.id } });
@@ -208,12 +231,12 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
 
     for (let i = 0; i < 10; i++) {
       const o = await makeOuvrage(section.id, 1);
-      await service.create({ ouvrageId: o.id, emprunteurId: user.id });
+      await service.create({ ouvrageId: o.id, emprunteurId: user.id }, acteurId);
     }
 
     const ouvrageSupplementaire = await makeOuvrage(section.id, 1);
     await expect(
-      service.create({ ouvrageId: ouvrageSupplementaire.id, emprunteurId: user.id }),
+      service.create({ ouvrageId: ouvrageSupplementaire.id, emprunteurId: user.id }, acteurId),
     ).rejects.toBeInstanceOf(ConflictException);
   }, 30_000);
 
@@ -224,9 +247,9 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     const { user: user1 } = await makeEnseignantAbonne();
     const { user: user2 } = await makeEnseignantAbonne();
 
-    await service.create({ ouvrageId: ouvrage.id, emprunteurId: user1.id });
+    await service.create({ ouvrageId: ouvrage.id, emprunteurId: user1.id }, acteurId);
     await expect(
-      service.create({ ouvrageId: ouvrage.id, emprunteurId: user2.id }),
+      service.create({ ouvrageId: ouvrage.id, emprunteurId: user2.id }, acteurId),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -236,10 +259,10 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     const ouvrage = await makeOuvrage(section.id, 1);
     const { user } = await makeEnseignantAbonne();
 
-    const emprunt = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
+    const emprunt = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }, acteurId);
 
     // Retour anticipé (dateRetourPrevue dans 30 jours) → pas de retard
-    const retour = await service.retour(emprunt.id);
+    const retour = await service.retour(emprunt.id, acteurId);
 
     expect(retour.statut).toBe(StatutEmprunt.RETOURNE);
     expect(retour.retardJours).toBe(0);
@@ -256,13 +279,13 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     const ouvrage = await makeOuvrage(section.id, 1);
     const { user } = await makeEnseignantAbonne();
 
-    const emprunt = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
+    const emprunt = await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }, acteurId);
     await prisma.emprunt.update({
       where: { id: emprunt.id },
       data: { dateRetourPrevue: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) },
     });
 
-    const retour = await service.retour(emprunt.id);
+    const retour = await service.retour(emprunt.id, acteurId);
     expect(retour.retardJours).toBeGreaterThanOrEqual(5);
   });
 
@@ -277,7 +300,7 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
       const { user } = await makeEnseignantAbonne();
       for (let i = 0; i < n; i += 1) {
         const ouvrage = await makeOuvrage(section.id, 1);
-        await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id });
+        await service.create({ ouvrageId: ouvrage.id, emprunteurId: user.id }, acteurId);
       }
       return { service, user };
     }
@@ -315,7 +338,7 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     it('pagination + filtre statut : meta.total ne compte que les lignes filtrées', async () => {
       const { service } = await seedEmprunts(3);
       const tous = await service.findAll({ page: 1, limit: 20 }, BIB);
-      await service.retour(tous.data[0].id); // 1 RETOURNE, 2 EN_COURS
+      await service.retour(tous.data[0].id, acteurId); // 1 RETOURNE, 2 EN_COURS
 
       const enCours = await service.findAll(
         { page: 1, limit: 20, statut: StatutEmprunt.EN_COURS },
@@ -332,11 +355,11 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
 
       const { user: ens } = await makeEnseignantAbonne();
       const ouvrageEns = await makeOuvrage(section.id, 1);
-      await service.create({ ouvrageId: ouvrageEns.id, emprunteurId: ens.id });
+      await service.create({ ouvrageId: ouvrageEns.id, emprunteurId: ens.id }, acteurId);
 
       const { user: etu } = await makeEtudiantAbonne();
       const ouvrageEtu = await makeOuvrage(section.id, 1);
-      await service.create({ ouvrageId: ouvrageEtu.id, emprunteurId: etu.id });
+      await service.create({ ouvrageId: ouvrageEtu.id, emprunteurId: etu.id }, acteurId);
 
       // L'étudiant demande « tous » les emprunts : scoping forcé sur les siens.
       const vueEtudiant = await service.findAll(
@@ -351,6 +374,90 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
       // Le bibliothécaire voit bien les deux.
       const vueBib = await service.findAll({ page: 1, limit: 20 }, BIB);
       expect(vueBib.meta.total).toBe(2);
+    });
+  });
+
+  // ── Audit métier (BACK-01, lot 3) — vérifié en base ───────────────────────
+
+  describe('audit métier', () => {
+    async function auditsDe(entityId: string) {
+      return prisma.auditLog.findMany({
+        where: { entity: 'Emprunt', entityId },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
+
+    it('create : CREATE liant acteur réel et emprunt, l\'emprunteur restant un détail', async () => {
+      const service = makeService();
+      const section = await makeSection();
+      const ouvrage = await makeOuvrage(section.id, 2);
+      const { user } = await makeEnseignantAbonne();
+
+      const emprunt = await service.create(
+        { ouvrageId: ouvrage.id, emprunteurId: user.id },
+        acteurId,
+      );
+
+      const audits = await auditsDe(emprunt.id);
+      expect(audits).toHaveLength(1);
+      expect(audits[0].action).toBe('CREATE');
+      // L'acteur est le bibliothécaire, JAMAIS l'emprunteur.
+      expect(audits[0].utilisateurId).toBe(acteurId);
+      expect(audits[0].utilisateurId).not.toBe(user.id);
+      expect(audits[0].details).toMatchObject({ emprunteurId: user.id });
+    });
+
+    it('retour : ajoute une entrée UPDATE au même emprunt', async () => {
+      const service = makeService();
+      const section = await makeSection();
+      const ouvrage = await makeOuvrage(section.id, 2);
+      const { user } = await makeEnseignantAbonne();
+
+      const emprunt = await service.create(
+        { ouvrageId: ouvrage.id, emprunteurId: user.id },
+        acteurId,
+      );
+      await service.retour(emprunt.id, acteurId);
+
+      const actions = (await auditsDe(emprunt.id)).map((a) => a.action);
+      expect(actions).toEqual(['CREATE', 'UPDATE']);
+    });
+
+    it('ATOMICITÉ : un audit impossible annule l\'emprunt ET le décompte d\'exemplaires', async () => {
+      const service = makeService();
+      const section = await makeSection();
+      const ouvrage = await makeOuvrage(section.id, 2);
+      const { user } = await makeEnseignantAbonne();
+
+      // Acteur inexistant : la clé étrangère de AuditLog échoue.
+      await expect(
+        service.create(
+          { ouvrageId: ouvrage.id, emprunteurId: user.id },
+          '00000000-0000-0000-0000-000000000000',
+        ),
+      ).rejects.toBeDefined();
+
+      expect(await prisma.emprunt.count({ where: { ouvrageId: ouvrage.id } })).toBe(0);
+      const apres = await prisma.ouvrage.findUniqueOrThrow({ where: { id: ouvrage.id } });
+      // Le décompte d'exemplaires n'a pas bougé : la transaction entière a été annulée.
+      expect(apres.exemplairesDisponibles).toBe(2);
+    });
+
+    it('un refus métier avant la transaction n\'écrit aucun audit', async () => {
+      const service = makeService();
+      const section = await makeSection();
+      const ouvrage = await makeOuvrage(section.id, 2);
+      const { user } = await makeEnseignantAbonne();
+
+      // Ouvrage inexistant : refus avant toute écriture.
+      await expect(
+        service.create(
+          { ouvrageId: '00000000-0000-0000-0000-000000000000', emprunteurId: user.id },
+          acteurId,
+        ),
+      ).rejects.toBeDefined();
+
+      expect(await prisma.auditLog.count({ where: { entity: 'Emprunt' } })).toBe(0);
     });
   });
 });

@@ -1,9 +1,15 @@
 import { NotFoundException } from '@nestjs/common';
 import { PrismaClient, StatutPoste } from '@prisma/client';
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
+import { AuditService } from '../../common/audit/audit.service';
 import { PosteService } from './poste.service';
 
 let prisma: PrismaClient;
+/**
+ * Acteur des mutations, RÉELLEMENT présent en base : `AuditLog.utilisateurId`
+ * porte une clé étrangère vers `Utilisateur`.
+ */
+let acteurId: string;
 
 beforeAll(() => {
   prisma = createTestPrisma();
@@ -15,12 +21,22 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateAll(prisma);
+  const acteur = await prisma.utilisateur.create({
+    data: {
+      nom: 'Responsable',
+      prenom: 'IT',
+      email: `acteur-audit-${Date.now()}-${Math.random()}@isseg-test.local`,
+      motDePasseHash: 'hash-non-significatif',
+      estActif: true,
+    },
+  });
+  acteurId = acteur.id;
 });
 
 describe('Intégration — PosteService (isseg_test)', () => {
   it('create + findOne + findAll', async () => {
-    const service = new PosteService(prisma as never);
-    const created = await service.create({ salle: 'Salle A' });
+    const service = new PosteService(prisma as never, new AuditService());
+    const created = await service.create({ salle: 'Salle A' }, acteurId);
     expect(created.statut).toBe(StatutPoste.DISPONIBLE);
 
     const found = await service.findOne(created.id);
@@ -32,29 +48,29 @@ describe('Intégration — PosteService (isseg_test)', () => {
   });
 
   it('findOne : introuvable → NotFoundException', async () => {
-    const service = new PosteService(prisma as never);
+    const service = new PosteService(prisma as never, new AuditService());
     await expect(service.findOne('00000000-0000-0000-0000-000000000000')).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
 
   it('updateStatut : HORS_SERVICE puis DISPONIBLE horodate la maintenance', async () => {
-    const service = new PosteService(prisma as never);
-    const created = await service.create({ salle: 'Salle A' });
+    const service = new PosteService(prisma as never, new AuditService());
+    const created = await service.create({ salle: 'Salle A' }, acteurId);
 
-    const horsService = await service.updateStatut(created.id, { statut: StatutPoste.HORS_SERVICE });
+    const horsService = await service.updateStatut(created.id, { statut: StatutPoste.HORS_SERVICE }, acteurId);
     expect(horsService.dateDerniereMaintenance).toBeNull();
 
-    const disponible = await service.updateStatut(created.id, { statut: StatutPoste.DISPONIBLE });
+    const disponible = await service.updateStatut(created.id, { statut: StatutPoste.DISPONIBLE }, acteurId);
     expect(disponible.dateDerniereMaintenance).not.toBeNull();
   });
 
   it('disponibiliteParSalle : agrège correctement à travers plusieurs salles', async () => {
-    const service = new PosteService(prisma as never);
-    await service.create({ salle: 'Salle A' });
-    const p2 = await service.create({ salle: 'Salle A' });
-    await service.updateStatut(p2.id, { statut: StatutPoste.HORS_SERVICE });
-    await service.create({ salle: 'Salle B' });
+    const service = new PosteService(prisma as never, new AuditService());
+    await service.create({ salle: 'Salle A' }, acteurId);
+    const p2 = await service.create({ salle: 'Salle A' }, acteurId);
+    await service.updateStatut(p2.id, { statut: StatutPoste.HORS_SERVICE }, acteurId);
+    await service.create({ salle: 'Salle B' }, acteurId);
 
     const result = await service.disponibiliteParSalle();
     expect(result).toEqual([

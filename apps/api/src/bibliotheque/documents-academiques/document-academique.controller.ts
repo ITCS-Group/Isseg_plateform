@@ -45,8 +45,11 @@ export class DocumentAcademiqueController {
   @ApiBody({ type: CreateDocumentAcademiqueDto })
   @ApiResponse({ status: 201, type: DocumentAcademiqueResponseDto })
   @ApiResponse({ status: 404, description: 'Etudiant auteur ou Enseignant directeur introuvable' })
-  create(@Body() dto: CreateDocumentAcademiqueDto): Promise<DocumentAcademiqueResponseDto> {
-    return this.documentAcademiqueService.create(dto);
+  create(
+    @Body() dto: CreateDocumentAcademiqueDto,
+    @CurrentUser('id') actorId: string,
+  ): Promise<DocumentAcademiqueResponseDto> {
+    return this.documentAcademiqueService.create(dto, actorId);
   }
 
   // ── GET /api/v1/documents-academiques/:id ─────────────────────────────────
@@ -75,7 +78,8 @@ export class DocumentAcademiqueController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateDocumentAcademiqueDto,
+    @CurrentUser('id') actorId: string,
   ): Promise<DocumentAcademiqueResponseDto> {
-    return this.documentAcademiqueService.update(id, dto);
+    return this.documentAcademiqueService.update(id, dto, actorId);
   }
 }

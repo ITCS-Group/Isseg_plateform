@@ -8,6 +8,7 @@ import {
 import { Prisma, StatutValidation } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateNoteEtudiantDto } from './dto/create-note-etudiant.dto';
 import { ListNoteEtudiantQueryDto } from './dto/list-note-etudiant-query.dto';
@@ -115,7 +116,10 @@ type NoteEtudiantWithOwnershipRow = Prisma.NoteEtudiantGetPayload<{
 export class NoteEtudiantService {
   private readonly logger = new Logger(NoteEtudiantService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
@@ -239,13 +243,28 @@ export class NoteEtudiantService {
       throw new ForbiddenException("Vous n'êtes pas l'enseignant titulaire de ce cours.");
     }
 
-    const created = await this.prisma.noteEtudiant.create({
-      data: {
-        epreuveId: dto.epreuveId,
-        inscriptionId: dto.inscriptionId,
-        noteBrute: dto.noteBrute,
-      },
-      select: NOTE_ETUDIANT_SELECT,
+    const created = await this.prisma.$transaction(async (tx) => {
+      const note = await tx.noteEtudiant.create({
+        data: {
+          epreuveId: dto.epreuveId,
+          inscriptionId: dto.inscriptionId,
+          noteBrute: dto.noteBrute,
+        },
+        select: NOTE_ETUDIANT_SELECT,
+      });
+
+      // La VALEUR de la note n'est volontairement pas journalisée ici :
+      // NoteEtudiantHistory reste la traçabilité spécialisée des valeurs.
+      // L'audit générique répond seulement à « qui a créé quelle note, quand ».
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'NoteEtudiant',
+        entityId: note.id,
+        actorId: currentUser.id,
+        details: { epreuveId: dto.epreuveId, inscriptionId: dto.inscriptionId },
+      });
+
+      return note;
     });
 
     this.logger.log(
@@ -308,8 +327,9 @@ export class NoteEtudiantService {
 
   // ── Suppression ───────────────────────────────────────────────────────────
 
-  async remove(id: string): Promise<void> {
-    await this.findRowOrThrow(id);
+  async remove(id: string, actorId: string): Promise<void> {
+    // Épreuve et inscription capturées avant la suppression, sans la valeur.
+    const note = await this.findRowOrThrow(id);
 
     const historyCount = await this.prisma.noteEtudiantHistory.count({
       where: { noteEtudiantId: id },
@@ -320,7 +340,18 @@ export class NoteEtudiantService {
       );
     }
 
-    await this.prisma.noteEtudiant.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.noteEtudiant.delete({ where: { id } });
+
+      await this.audit.record(tx, {
+        action: 'DELETE',
+        entity: 'NoteEtudiant',
+        entityId: id,
+        actorId,
+        details: { epreuveId: note.epreuveId, inscriptionId: note.inscriptionId },
+      });
+    });
+
     this.logger.log(`NoteEtudiant supprimée : ${id}`);
   }
 

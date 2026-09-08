@@ -1,12 +1,16 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { NatureRequete, StatutRequete, SousServiceIT } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
+import { AuditService } from '../../common/audit/audit.service';
 import { RequeteService } from './requete.service';
 
 interface PrismaMock {
   personnel: { findUnique: jest.Mock };
   technicien: { findFirst: jest.Mock };
   requete: { create: jest.Mock; findMany: jest.Mock; count: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
+  auditLog: { create: jest.Mock };
+  /** Transaction interactive : le callback reçoit le mock lui-même. */
+  $transaction: jest.Mock;
 }
 
 const PAGE_1 = { page: 1, limit: 20 };
@@ -45,6 +49,7 @@ function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser
 
 describe('RequeteService', () => {
   let service: RequeteService;
+  let audit: AuditService;
   let prisma: PrismaMock;
 
   beforeEach(() => {
@@ -58,8 +63,12 @@ describe('RequeteService', () => {
         findUnique: jest.fn().mockResolvedValue(makeRow()),
         update: jest.fn().mockResolvedValue(makeRow({ statut: StatutRequete.CLOTUREE, dateCloture: new Date() })),
       },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new RequeteService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new RequeteService(prisma as never, audit);
   });
 
   describe('create', () => {

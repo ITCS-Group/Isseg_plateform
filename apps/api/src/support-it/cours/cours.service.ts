@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CoursSupportITResponseDto, PaginatedCoursSupportITResponseDto } from './dto/cours.response.dto';
 import { CreateCoursSupportITDto } from './dto/create-cours.dto';
@@ -9,10 +10,28 @@ import { ListCoursSupportITQueryDto } from './dto/list-cours-query.dto';
 export class CoursSupportITService {
   private readonly logger = new Logger(CoursSupportITService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
-  async create(dto: CreateCoursSupportITDto): Promise<CoursSupportITResponseDto> {
-    const created = await this.prisma.coursSupportIT.create({ data: dto });
+  async create(
+    dto: CreateCoursSupportITDto,
+    actorId: string,
+  ): Promise<CoursSupportITResponseDto> {
+    const created = await this.prisma.$transaction(async (tx) => {
+      const cours = await tx.coursSupportIT.create({ data: dto });
+
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'CoursSupportIT',
+        entityId: cours.id,
+        actorId,
+        details: { titre: cours.titre },
+      });
+
+      return cours;
+    });
     this.logger.log(`Cours Support IT créé : ${created.id} (${created.titre})`);
     return created;
   }

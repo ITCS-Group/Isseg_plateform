@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AbonneService } from './abonne.service';
 import { AbonneResponseDto, PaginatedAbonneResponseDto } from './dto/abonne.response.dto';
@@ -34,7 +35,10 @@ export class AbonneController {
   @ApiResponse({ status: 201, type: AbonneResponseDto })
   @ApiResponse({ status: 404, description: 'Utilisateur introuvable' })
   @ApiResponse({ status: 409, description: 'Utilisateur déjà abonné' })
-  create(@Body() dto: CreateAbonneDto): Promise<AbonneResponseDto> {
-    return this.abonneService.create(dto);
+  create(
+    @Body() dto: CreateAbonneDto,
+    @CurrentUser('id') actorId: string,
+  ): Promise<AbonneResponseDto> {
+    return this.abonneService.create(dto, actorId);
   }
 }
