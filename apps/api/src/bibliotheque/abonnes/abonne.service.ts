@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { TYPE_ABONNE_RULES } from '../common/loan-rules.constants';
 import { AbonneResponseDto, PaginatedAbonneResponseDto } from './dto/abonne.response.dto';
@@ -33,7 +34,10 @@ type AbonneRow = Prisma.AbonneGetPayload<{ select: typeof ABONNE_SELECT }>;
 export class AbonneService {
   private readonly logger = new Logger(AbonneService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async findAll(query: ListAbonneQueryDto): Promise<PaginatedAbonneResponseDto> {
     const [rows, total] = await Promise.all([
@@ -55,7 +59,7 @@ export class AbonneService {
     return { data: rows.map(this.toDto), meta };
   }
 
-  async create(dto: CreateAbonneDto): Promise<AbonneResponseDto> {
+  async create(dto: CreateAbonneDto, actorId: string): Promise<AbonneResponseDto> {
     const utilisateur = await this.prisma.utilisateur.findUnique({
       where: { id: dto.utilisateurId },
     });
@@ -71,14 +75,28 @@ export class AbonneService {
     }
 
     const rule = TYPE_ABONNE_RULES[dto.typeAbonne];
-    const created = await this.prisma.abonne.create({
-      data: {
-        utilisateurId: dto.utilisateurId,
-        typeAbonne: dto.typeAbonne,
-        limiteEmprunts: rule.limiteEmprunts,
-        dureePretJours: rule.dureePretJours,
-      },
-      select: ABONNE_SELECT,
+    const created = await this.prisma.$transaction(async (tx) => {
+      const abonne = await tx.abonne.create({
+        data: {
+          utilisateurId: dto.utilisateurId,
+          typeAbonne: dto.typeAbonne,
+          limiteEmprunts: rule.limiteEmprunts,
+          dureePretJours: rule.dureePretJours,
+        },
+        select: ABONNE_SELECT,
+      });
+
+      // La cible est l'ABONNÉ créé ; `utilisateurId` est la personne abonnée,
+      // en aucun cas l'auteur de l'opération.
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Abonne',
+        entityId: abonne.id,
+        actorId,
+        details: { utilisateurId: dto.utilisateurId, typeAbonne: dto.typeAbonne },
+      });
+
+      return abonne;
     });
 
     this.logger.log(`Abonne créé (utilisateurId: ${dto.utilisateurId}, type: ${dto.typeAbonne})`);

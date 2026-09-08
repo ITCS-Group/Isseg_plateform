@@ -63,8 +63,11 @@ export class CoursClasseController {
   @ApiResponse({ status: 201, type: CoursClasseResponseDto })
   @ApiResponse({ status: 404, description: 'Cours ou classe introuvable' })
   @ApiResponse({ status: 409, description: 'Cours non approuvé, ou association déjà existante' })
-  create(@Body() dto: CreateCoursClasseDto): Promise<CoursClasseResponseDto> {
-    return this.coursClasseService.create(dto);
+  create(
+    @Body() dto: CreateCoursClasseDto,
+    @CurrentUser('id') actorId: string,
+  ): Promise<CoursClasseResponseDto> {
+    return this.coursClasseService.create(dto, actorId);
   }
 
   // ── GET /api/v1/cours-classes/:id ────────────────────────────────────────
@@ -91,7 +94,10 @@ export class CoursClasseController {
   @ApiResponse({ status: 204, description: 'Association supprimée' })
   @ApiResponse({ status: 404, description: 'Association introuvable' })
   @ApiResponse({ status: 409, description: 'Épreuves encore rattachées à cette association' })
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.coursClasseService.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') actorId: string,
+  ): Promise<void> {
+    return this.coursClasseService.remove(id, actorId);
   }
 }

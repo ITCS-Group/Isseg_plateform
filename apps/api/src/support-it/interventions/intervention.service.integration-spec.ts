@@ -3,6 +3,7 @@ import { NatureRequete, PrismaClient, SousServiceIT, StatutRequete } from '@pris
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import { RequeteService } from '../requetes/requete.service';
+import { AuditService } from '../../common/audit/audit.service';
 import { InterventionService } from './intervention.service';
 
 let seq = 0;
@@ -60,8 +61,8 @@ beforeEach(async () => {
 
 describe('Intégration — InterventionService (isseg_test)', () => {
   it('création : technicien du bon sous-service → intervention créée, requête OUVERTE passe EN_COURS', async () => {
-    const requeteService = new RequeteService(prisma as never);
-    const interventionService = new InterventionService(prisma as never);
+    const requeteService = new RequeteService(prisma as never, new AuditService());
+    const interventionService = new InterventionService(prisma as never, new AuditService());
     const { user: demandeur } = await makePersonnel();
     const { user: technicien } = await makeTechnicien(SousServiceIT.MAINTENANCE);
 
@@ -83,8 +84,8 @@ describe('Intégration — InterventionService (isseg_test)', () => {
   });
 
   it('création : technicien d’un autre sous-service → ForbiddenException, rien en base', async () => {
-    const requeteService = new RequeteService(prisma as never);
-    const interventionService = new InterventionService(prisma as never);
+    const requeteService = new RequeteService(prisma as never, new AuditService());
+    const interventionService = new InterventionService(prisma as never, new AuditService());
     const { user: demandeur } = await makePersonnel();
     const { user: technicienCyber } = await makeTechnicien(SousServiceIT.CYBER);
 
@@ -100,8 +101,8 @@ describe('Intégration — InterventionService (isseg_test)', () => {
   });
 
   it('création : requête clôturée → ConflictException', async () => {
-    const requeteService = new RequeteService(prisma as never);
-    const interventionService = new InterventionService(prisma as never);
+    const requeteService = new RequeteService(prisma as never, new AuditService());
+    const interventionService = new InterventionService(prisma as never, new AuditService());
     const { user: demandeur } = await makePersonnel();
 
     const requete = await requeteService.create(
@@ -117,8 +118,8 @@ describe('Intégration — InterventionService (isseg_test)', () => {
   });
 
   it('findAllForRequete : le demandeur voit les interventions de sa requête, un tiers non', async () => {
-    const requeteService = new RequeteService(prisma as never);
-    const interventionService = new InterventionService(prisma as never);
+    const requeteService = new RequeteService(prisma as never, new AuditService());
+    const interventionService = new InterventionService(prisma as never, new AuditService());
     const { user: demandeur } = await makePersonnel();
     const { user: tiers } = await makePersonnel();
     const { user: technicien } = await makeTechnicien(SousServiceIT.CENTRE_INFORMATIQUE);
@@ -142,7 +143,7 @@ describe('Intégration — InterventionService (isseg_test)', () => {
   });
 
   it('findAllForRequete : requête introuvable → NotFoundException', async () => {
-    const interventionService = new InterventionService(prisma as never);
+    const interventionService = new InterventionService(prisma as never, new AuditService());
     const { user } = await makePersonnel();
     await expect(
       interventionService.findAllForRequete(
@@ -151,5 +152,66 @@ describe('Intégration — InterventionService (isseg_test)', () => {
         toAuthUser(user.id, ['ENSEIGNANT']),
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  // ── Audit métier (BACK-01, lot 6) — vérifié en base ───────────────────────
+
+  describe('audit métier', () => {
+    it('create : CREATE sur l\'intervention, décrivant la transition de la requête', async () => {
+      const service = new InterventionService(prisma as never, new AuditService());
+      const { user: demandeur } = await makePersonnel();
+      const { user: techUser } = await makeTechnicien(SousServiceIT.MAINTENANCE);
+      const requete = await prisma.requete.create({
+        data: {
+          demandeurId: (await prisma.personnel.findFirstOrThrow({ where: { userId: demandeur.id } })).id,
+          nature: NatureRequete.PANNE_MATERIEL,
+          sousServiceCible: SousServiceIT.MAINTENANCE,
+          description: 'Écran HS',
+        },
+      });
+
+      const intervention = await service.create(
+        requete.id,
+        { compteRendu: 'Remplacement du câble' },
+        techUser.id,
+      );
+
+      const audits = await prisma.auditLog.findMany({
+        where: { entity: 'Intervention', entityId: intervention.id },
+      });
+      expect(audits).toHaveLength(1);
+      expect(audits[0].action).toBe('CREATE');
+      // L'acteur est le COMPTE du technicien, pas son profil Technicien.
+      expect(audits[0].utilisateurId).toBe(techUser.id);
+      expect(audits[0].details).toMatchObject({
+        statutRequeteAvant: 'OUVERTE',
+        statutRequeteApres: 'EN_COURS',
+      });
+    });
+
+    it('ATOMICITÉ : un audit impossible annule l\'intervention ET la transition', async () => {
+      const service = new InterventionService(prisma as never, new AuditService());
+      const { user: demandeur } = await makePersonnel();
+      await makeTechnicien(SousServiceIT.MAINTENANCE);
+      const requete = await prisma.requete.create({
+        data: {
+          demandeurId: (await prisma.personnel.findFirstOrThrow({ where: { userId: demandeur.id } })).id,
+          nature: NatureRequete.PANNE_MATERIEL,
+          sousServiceCible: SousServiceIT.MAINTENANCE,
+          description: 'Écran HS',
+        },
+      });
+
+      // Acteur sans profil Technicien : refus AVANT toute écriture.
+      await expect(
+        service.create(requete.id, { compteRendu: 'x' }, demandeur.id),
+      ).rejects.toBeDefined();
+
+      expect(await prisma.intervention.count({ where: { requeteId: requete.id } })).toBe(0);
+      const apres = await prisma.requete.findUniqueOrThrow({ where: { id: requete.id } });
+      // La requête reste OUVERTE : aucune transition sur une intervention refusée.
+      expect(apres.statut).toBe('OUVERTE');
+      expect(await prisma.auditLog.count({ where: { entity: 'Intervention' } })).toBe(0);
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { StatutRequete, SousServiceIT } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
+import { AuditService } from '../../common/audit/audit.service';
 import { InterventionService } from './intervention.service';
 
 interface PrismaMock {
@@ -9,6 +10,7 @@ interface PrismaMock {
   personnel: { findUnique: jest.Mock };
   intervention: { create: jest.Mock; findMany: jest.Mock; count: jest.Mock };
   $transaction: jest.Mock;
+  auditLog: { create: jest.Mock };
 }
 
 const PAGE_1 = { page: 1, limit: 20 };
@@ -48,6 +50,7 @@ function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser
 
 describe('InterventionService', () => {
   let service: InterventionService;
+  let audit: AuditService;
   let prisma: PrismaMock;
 
   beforeEach(() => {
@@ -61,8 +64,11 @@ describe('InterventionService', () => {
         count: jest.fn().mockResolvedValue(1),
       },
       $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prisma)),
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
     };
-    service = new InterventionService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new InterventionService(prisma as never, audit);
   });
 
   describe('create', () => {

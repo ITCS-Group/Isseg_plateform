@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -43,7 +44,10 @@ const BCRYPT_ROUNDS = 12;
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
@@ -86,24 +90,47 @@ export class UsersService {
 
   // ── Création ──────────────────────────────────────────────────────────────
 
-  async create(dto: CreateUserDto): Promise<UserResponseDto> {
+  async create(dto: CreateUserDto, actorId: string): Promise<UserResponseDto> {
     await this.assertEmailFree(dto.email);
 
     const hash = await bcrypt.hash(dto.motDePasse, BCRYPT_ROUNDS);
 
-    const user = await this.prisma.utilisateur.create({
-      data: {
-        nom: dto.nom,
-        prenom: dto.prenom,
-        email: dto.email,
-        motDePasseHash: hash,
-        ...(dto.roleIds?.length && {
-          roles: {
-            create: dto.roleIds.map((roleId) => ({ roleId })),
-          },
-        }),
-      },
-      select: USER_SELECT,
+    // Création et audit dans la même transaction : un compte créé sans trace
+    // serait un angle mort, la création de compte étant l'opération la plus
+    // sensible du module.
+    const user = await this.prisma.$transaction(async (tx) => {
+      const cree = await tx.utilisateur.create({
+        data: {
+          nom: dto.nom,
+          prenom: dto.prenom,
+          email: dto.email,
+          motDePasseHash: hash,
+          ...(dto.roleIds?.length && {
+            roles: {
+              create: dto.roleIds.map((roleId) => ({ roleId })),
+            },
+          }),
+        },
+        select: USER_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Utilisateur',
+        entityId: cree.id,
+        actorId,
+        // Ni dto.motDePasse ni le hash ne sont transmis : le mot de passe n'a
+        // aucune raison d'apparaître dans une trace d'audit.
+        details: {
+          email: cree.email,
+          nom: cree.nom,
+          prenom: cree.prenom,
+          estActif: cree.estActif,
+          roleIds: dto.roleIds ?? [],
+        },
+      });
+
+      return cree;
     });
 
     this.logger.log(`Utilisateur créé : ${user.email}`);
@@ -112,15 +139,33 @@ export class UsersService {
 
   // ── Mise à jour ───────────────────────────────────────────────────────────
 
-  async update(id: string, dto: UpdateUserDto): Promise<UserResponseDto> {
+  async update(
+    id: string,
+    dto: UpdateUserDto,
+    actorId: string,
+  ): Promise<UserResponseDto> {
     await this.findRowOrThrow(id);
 
     if (dto.email) await this.assertEmailFree(dto.email, id);
 
-    const user = await this.prisma.utilisateur.update({
-      where: { id },
-      data: dto,
-      select: USER_SELECT,
+    const user = await this.prisma.$transaction(async (tx) => {
+      const modifie = await tx.utilisateur.update({
+        where: { id },
+        data: dto,
+        select: USER_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'Utilisateur',
+        entityId: id,
+        actorId,
+        // On journalise les NOMS des champs modifiés, pas leurs valeurs :
+        // l'audit doit dire ce qui a bougé, l'état courant reste en base.
+        details: { champsModifies: Object.keys(dto) },
+      });
+
+      return modifie;
     });
 
     return this.toDto(user);
@@ -128,10 +173,10 @@ export class UsersService {
 
   // ── Désactivation (soft delete) ───────────────────────────────────────────
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actorId: string): Promise<void> {
     await this.findRowOrThrow(id);
 
-    // Désactivation et révocation des sessions dans la MÊME transaction :
+    // Désactivation, révocation des sessions et audit dans la MÊME transaction :
     // un échec partiel laisserait un compte désactivé conservant des refresh
     // tokens valides, donc la capacité d'obtenir de nouveaux access tokens
     // pendant toute leur durée de vie (7 jours).
@@ -146,6 +191,17 @@ export class UsersService {
         data: { isRevoked: true },
       });
 
+      await this.audit.record(tx, {
+        action: 'DELETE',
+        entity: 'Utilisateur',
+        entityId: id,
+        actorId,
+        details: {
+          typeSuppression: 'desactivation',
+          refreshTokensRevoques: revoques.count,
+        },
+      });
+
       return revoques.count;
     });
 
@@ -156,12 +212,16 @@ export class UsersService {
 
   // ── Changement de mot de passe ────────────────────────────────────────────
 
-  async changePassword(id: string, dto: ChangePasswordDto): Promise<void> {
+  async changePassword(
+    id: string,
+    dto: ChangePasswordDto,
+    actorId: string,
+  ): Promise<void> {
     await this.findRowOrThrow(id);
 
     const hash = await bcrypt.hash(dto.nouveauMotDePasse, BCRYPT_ROUNDS);
 
-    // Nouveau hash et révocation des sessions dans la MÊME transaction :
+    // Nouveau hash, révocation des sessions et audit dans la MÊME transaction :
     // un changement de mot de passe doit faire tomber les sessions ouvertes,
     // sans quoi un refresh token volé resterait exploitable après la mesure
     // de remédiation.
@@ -176,6 +236,19 @@ export class UsersService {
         data: { isRevoked: true },
       });
 
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'Utilisateur',
+        entityId: id,
+        actorId,
+        // Le fait est journalisé, jamais la valeur : ni le mot de passe en
+        // clair, ni son hash, ne doivent transiter par AuditLog.
+        details: {
+          motDePasseModifie: true,
+          refreshTokensRevoques: revoques.count,
+        },
+      });
+
       return revoques.count;
     });
 
@@ -186,33 +259,68 @@ export class UsersService {
 
   // ── Gestion des rôles ─────────────────────────────────────────────────────
 
-  async assignRole(userId: string, roleId: string): Promise<UserResponseDto> {
+  async assignRole(
+    userId: string,
+    roleId: string,
+    actorId: string,
+  ): Promise<UserResponseDto> {
     await this.findRowOrThrow(userId);
-    await this.assertRoleExists(roleId);
+    const role = await this.assertRoleExists(roleId);
 
-    await this.prisma.utilisateurRole.upsert({
-      where: { utilisateurId_roleId: { utilisateurId: userId, roleId } },
-      create: { utilisateurId: userId, roleId },
-      update: {},
+    await this.prisma.$transaction(async (tx) => {
+      await tx.utilisateurRole.upsert({
+        where: { utilisateurId_roleId: { utilisateurId: userId, roleId } },
+        create: { utilisateurId: userId, roleId },
+        update: {},
+      });
+
+      // La cible est l'UTILISATEUR, pas la table de liaison : la question à
+      // laquelle l'audit répond est « qu'est-il arrivé à ce compte ».
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Utilisateur',
+        entityId: userId,
+        actorId,
+        details: { roleId, roleNom: role.nomRole },
+      });
     });
 
     this.logger.log(`Rôle ${roleId} attribué à l'utilisateur ${userId}`);
     return this.findOne(userId);
   }
 
-  async removeRole(userId: string, roleId: string): Promise<UserResponseDto> {
+  async removeRole(
+    userId: string,
+    roleId: string,
+    actorId: string,
+  ): Promise<UserResponseDto> {
     await this.findRowOrThrow(userId);
 
     const link = await this.prisma.utilisateurRole.findUnique({
       where: { utilisateurId_roleId: { utilisateurId: userId, roleId } },
+      include: { role: { select: { nomRole: true } } },
     });
 
     if (!link) {
       throw new NotFoundException('Ce rôle n\'est pas attribué à cet utilisateur');
     }
 
-    await this.prisma.utilisateurRole.delete({
-      where: { utilisateurId_roleId: { utilisateurId: userId, roleId } },
+    // Le nom du rôle est capturé AVANT la suppression du lien : l'audit ne doit
+    // jamais dépendre d'une relecture de ce qu'il vient de supprimer.
+    const roleNom = link.role.nomRole;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.utilisateurRole.delete({
+        where: { utilisateurId_roleId: { utilisateurId: userId, roleId } },
+      });
+
+      await this.audit.record(tx, {
+        action: 'DELETE',
+        entity: 'Utilisateur',
+        entityId: userId,
+        actorId,
+        details: { roleId, roleNom },
+      });
     });
 
     this.logger.log(`Rôle ${roleId} retiré de l'utilisateur ${userId}`);
@@ -238,9 +346,13 @@ export class UsersService {
     }
   }
 
-  private async assertRoleExists(roleId: string): Promise<void> {
-    const role = await this.prisma.role.findUnique({ where: { id: roleId } });
+  private async assertRoleExists(roleId: string): Promise<{ nomRole: string }> {
+    const role = await this.prisma.role.findUnique({
+      where: { id: roleId },
+      select: { nomRole: true },
+    });
     if (!role) throw new NotFoundException(`Rôle introuvable (id: ${roleId})`);
+    return role;
   }
 
   private toDto(user: UserRow): UserResponseDto {

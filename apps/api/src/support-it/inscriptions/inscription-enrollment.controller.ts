@@ -21,6 +21,8 @@ export class InscriptionEnrollmentController {
     @Param('coursId', ParseUUIDPipe) coursId: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<InscriptionCoursSupportITResponseDto> {
-    return this.inscriptionService.enroll(coursId, user.id);
+    // Auto-inscription : le participant et l'acteur sont la même personne,
+    // mais les deux paramètres restent distincts côté service.
+    return this.inscriptionService.enroll(coursId, user.id, user.id);
   }
 }

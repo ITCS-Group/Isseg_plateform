@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { StatutEmprunt, StatutOuvrage, TypeAbonne } from '@prisma/client';
+import { AuditService } from '../../common/audit/audit.service';
 import { EmpruntService } from './emprunt.service';
 
 interface PrismaMock {
@@ -8,6 +9,9 @@ interface PrismaMock {
   etudiant: { findUnique: jest.Mock };
   emprunt: { count: jest.Mock; findUnique: jest.Mock; create: jest.Mock; update: jest.Mock; findMany: jest.Mock };
   $transaction: jest.Mock;
+  auditLog: {
+    create: jest.Mock;
+  };
 }
 
 const OUVRAGE = {
@@ -56,8 +60,12 @@ function makeConfigService(typesAutorises: string[] = ['ENSEIGNANT']) {
   return { get: jest.fn().mockReturnValue(typesAutorises) };
 }
 
+/** Acteur des mutations. Prisma est mocké : aucune contrainte de clé étrangère. */
+const acteurId = 'acteur-1';
+
 describe('EmpruntService', () => {
   let service: EmpruntService;
+  let audit: AuditService;
   let prisma: PrismaMock;
   let regularityService: { checkRegularity: jest.Mock };
   let config: { get: jest.Mock };
@@ -79,37 +87,42 @@ describe('EmpruntService', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
       $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prisma)),
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
     };
     regularityService = { checkRegularity: jest.fn() };
     config = makeConfigService();
-    service = new EmpruntService(prisma as never, regularityService as never, config as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new EmpruntService(prisma as never, regularityService as never, config as never, audit);
   });
 
   describe('create', () => {
     it('ouvrage introuvable → NotFoundException', async () => {
       prisma.ouvrage.findUnique.mockResolvedValue(null);
-      await expect(service.create({ ouvrageId: 'x', emprunteurId: 'user-1' })).rejects.toBeInstanceOf(
+      await expect(service.create({ ouvrageId: 'x', emprunteurId: 'user-1' }, acteurId)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it('aucun exemplaire disponible → ConflictException', async () => {
       prisma.ouvrage.findUnique.mockResolvedValue({ ...OUVRAGE, exemplairesDisponibles: 0 });
-      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' })).rejects.toBeInstanceOf(
+      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId)).rejects.toBeInstanceOf(
         ConflictException,
       );
     });
 
     it('aucun profil abonné → NotFoundException', async () => {
       prisma.abonne.findUnique.mockResolvedValue(null);
-      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' })).rejects.toBeInstanceOf(
+      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it('abonnement inactif → ForbiddenException', async () => {
       prisma.abonne.findUnique.mockResolvedValue({ ...ABONNE, statutActif: false });
-      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' })).rejects.toBeInstanceOf(
+      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
     });
@@ -123,7 +136,7 @@ describe('EmpruntService', () => {
         reason: 'Frais non soldés',
       });
 
-      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' })).rejects.toBeInstanceOf(
+      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
       expect(prisma.emprunt.create).not.toHaveBeenCalled();
@@ -131,7 +144,7 @@ describe('EmpruntService', () => {
 
     it('non-étudiant (pas de fiche Etudiant) → régularité non vérifiée, emprunt créé', async () => {
       prisma.etudiant.findUnique.mockResolvedValue(null);
-      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' });
+      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId);
 
       expect(regularityService.checkRegularity).not.toHaveBeenCalled();
       expect(result.id).toBe('emp-1');
@@ -143,7 +156,7 @@ describe('EmpruntService', () => {
       prisma.etudiant.findUnique.mockResolvedValue({ matriculeUnique: 'ISSEG-2026-0001' });
       regularityService.checkRegularity.mockResolvedValue({ isRegular: true });
 
-      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' });
+      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId);
 
       expect(regularityService.checkRegularity).toHaveBeenCalledWith('ISSEG-2026-0001');
       expect(result.id).toBe('emp-1');
@@ -153,7 +166,7 @@ describe('EmpruntService', () => {
     it('type d’abonné non autorisé par défaut (ETUDIANT_L1_L2) → ForbiddenException, régularité jamais vérifiée', async () => {
       prisma.abonne.findUnique.mockResolvedValue({ ...ABONNE, typeAbonne: TypeAbonne.ETUDIANT_L1_L2 });
 
-      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' })).rejects.toBeInstanceOf(
+      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
       expect(regularityService.checkRegularity).not.toHaveBeenCalled();
@@ -161,7 +174,7 @@ describe('EmpruntService', () => {
     });
 
     it('ENSEIGNANT autorisé par défaut → emprunt créé', async () => {
-      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' });
+      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId);
       expect(result.id).toBe('emp-1');
     });
 
@@ -169,7 +182,7 @@ describe('EmpruntService', () => {
       config.get.mockReturnValue(['ENSEIGNANT', 'ETUDIANT_L1_L2']);
       prisma.abonne.findUnique.mockResolvedValue({ ...ABONNE, typeAbonne: TypeAbonne.ETUDIANT_L1_L2 });
 
-      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' });
+      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId);
       expect(result.id).toBe('emp-1');
     });
 
@@ -177,20 +190,20 @@ describe('EmpruntService', () => {
       config.get.mockReturnValue(['ENSEIGNANT']);
       prisma.abonne.findUnique.mockResolvedValue({ ...ABONNE, typeAbonne: TypeAbonne.PERSONNEL_ADMIN });
 
-      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' })).rejects.toBeInstanceOf(
+      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
     });
 
     it('quota atteint (empruntsEnCours >= limiteEmprunts) → ConflictException', async () => {
       prisma.emprunt.count.mockResolvedValue(10); // ABONNE par défaut = ENSEIGNANT, limiteEmprunts 10
-      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' })).rejects.toBeInstanceOf(
+      await expect(service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId)).rejects.toBeInstanceOf(
         ConflictException,
       );
     });
 
     it('création : décrémente exemplairesDisponibles, ne passe pas EMPRUNTE si encore disponible', async () => {
-      await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' });
+      await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId);
 
       expect(prisma.ouvrage.update).toHaveBeenCalledWith({
         where: { id: 'ouv-1' },
@@ -200,7 +213,7 @@ describe('EmpruntService', () => {
 
     it('création : dernier exemplaire → ouvrage passe en statut EMPRUNTE', async () => {
       prisma.ouvrage.findUnique.mockResolvedValue({ ...OUVRAGE, exemplairesDisponibles: 1 });
-      await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' });
+      await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId);
 
       expect(prisma.ouvrage.update).toHaveBeenCalledWith({
         where: { id: 'ouv-1' },
@@ -209,7 +222,7 @@ describe('EmpruntService', () => {
     });
 
     it('dateRetourPrevue = dateEmprunt + dureePretJours de l’abonné', async () => {
-      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' });
+      const result = await service.create({ ouvrageId: 'ouv-1', emprunteurId: 'user-1' }, acteurId);
       const createCall = prisma.emprunt.create.mock.calls[0][0];
       const diffJours =
         (createCall.data.dateRetourPrevue.getTime() - createCall.data.dateEmprunt.getTime()) /
@@ -222,19 +235,19 @@ describe('EmpruntService', () => {
   describe('retour', () => {
     it('emprunt introuvable → NotFoundException', async () => {
       prisma.emprunt.findUnique.mockResolvedValue(null);
-      await expect(service.retour('x')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.retour('x', acteurId)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('déjà retourné → ConflictException', async () => {
       prisma.emprunt.findUnique.mockResolvedValue({ ...EMPRUNT_ROW, statut: StatutEmprunt.RETOURNE });
-      await expect(service.retour('emp-1')).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.retour('emp-1', acteurId)).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('retour à temps → retardJours = 0', async () => {
       const futur = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
       prisma.emprunt.findUnique.mockResolvedValue({ ...EMPRUNT_ROW, dateRetourPrevue: futur });
 
-      await service.retour('emp-1');
+      await service.retour('emp-1', acteurId);
 
       expect(prisma.emprunt.update.mock.calls[0][0].data.retardJours).toBe(0);
       expect(prisma.emprunt.update.mock.calls[0][0].data.statut).toBe(StatutEmprunt.RETOURNE);
@@ -244,7 +257,7 @@ describe('EmpruntService', () => {
       const passe = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
       prisma.emprunt.findUnique.mockResolvedValue({ ...EMPRUNT_ROW, dateRetourPrevue: passe });
 
-      await service.retour('emp-1');
+      await service.retour('emp-1', acteurId);
 
       expect(prisma.emprunt.update.mock.calls[0][0].data.retardJours).toBeGreaterThanOrEqual(3);
     });
@@ -256,7 +269,7 @@ describe('EmpruntService', () => {
         statut: StatutOuvrage.EMPRUNTE,
       });
 
-      await service.retour('emp-1');
+      await service.retour('emp-1', acteurId);
 
       expect(prisma.ouvrage.update).toHaveBeenCalledWith({
         where: { id: 'ouv-1' },
@@ -271,7 +284,7 @@ describe('EmpruntService', () => {
         exemplairesDisponibles: 3,
       });
 
-      await service.retour('emp-1');
+      await service.retour('emp-1', acteurId);
 
       expect(prisma.ouvrage.update.mock.calls[0][0].data.exemplairesDisponibles).toBe(3);
     });

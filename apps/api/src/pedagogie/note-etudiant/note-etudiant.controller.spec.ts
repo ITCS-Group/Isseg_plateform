@@ -113,13 +113,18 @@ describe('NoteEtudiantController — DELETE /notes-etudiant/:id (remove)', () =>
     expect(effective).toEqual(['ADMIN']);
   });
 
-  it('transmet l’id exactement tel que reçu au service, sans utilisateur courant', async () => {
+  // Contrat modifié par BACK-01 : avant l'audit métier, `remove` était appelé
+  // avec le seul identifiant, et ce test l'affirmait explicitement. L'audit
+  // exige désormais de savoir QUI supprime la note, donc l'acteur authentifié
+  // est transmis en second argument. L'assertion est inversée à dessein, elle
+  // n'a pas été ajustée pour faire passer un test.
+  it('transmet l’id ET l’acteur authentifié au service', async () => {
     const serviceMock = { remove: jest.fn().mockResolvedValue(undefined) };
     const controller = new NoteEtudiantController(serviceMock as unknown as NoteEtudiantService);
 
-    await controller.remove('note-1');
+    await controller.remove('note-1', 'acteur-1');
 
-    expect(serviceMock.remove).toHaveBeenCalledWith('note-1');
-    expect(serviceMock.remove.mock.calls[0]).toHaveLength(1);
+    expect(serviceMock.remove).toHaveBeenCalledWith('note-1', 'acteur-1');
+    expect(serviceMock.remove.mock.calls[0]).toHaveLength(2);
   });
 });

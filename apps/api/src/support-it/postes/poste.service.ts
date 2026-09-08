@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { StatutPoste } from '@prisma/client';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreatePosteDto } from './dto/create-poste.dto';
 import { DisponibilitePosteDto, PaginatedPosteResponseDto, PosteResponseDto } from './dto/poste.response.dto';
@@ -11,10 +12,26 @@ import { UpdatePosteStatutDto } from './dto/update-poste-statut.dto';
 export class PosteService {
   private readonly logger = new Logger(PosteService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
-  async create(dto: CreatePosteDto): Promise<PosteResponseDto> {
-    const created = await this.prisma.poste.create({ data: { salle: dto.salle } });
+  async create(dto: CreatePosteDto, actorId: string): Promise<PosteResponseDto> {
+    const created = await this.prisma.$transaction(async (tx) => {
+      const poste = await tx.poste.create({ data: { salle: dto.salle } });
+
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Poste',
+        entityId: poste.id,
+        actorId,
+        details: { salle: poste.salle, statut: poste.statut },
+      });
+
+      return poste;
+    });
+
     this.logger.log(`Poste créé : ${created.id} (salle: ${created.salle})`);
     return created;
   }
@@ -48,18 +65,35 @@ export class PosteService {
     return row;
   }
 
-  async updateStatut(id: string, dto: UpdatePosteStatutDto): Promise<PosteResponseDto> {
+  async updateStatut(
+    id: string,
+    dto: UpdatePosteStatutDto,
+    actorId: string,
+  ): Promise<PosteResponseDto> {
     const row = await this.prisma.poste.findUnique({ where: { id } });
     if (!row) {
       throw new NotFoundException(`Poste introuvable (id: ${id})`);
     }
 
-    const updated = await this.prisma.poste.update({
-      where: { id },
-      data: {
-        statut: dto.statut,
-        dateDerniereMaintenance: dto.statut === StatutPoste.DISPONIBLE ? new Date() : row.dateDerniereMaintenance,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const poste = await tx.poste.update({
+        where: { id },
+        data: {
+          statut: dto.statut,
+          dateDerniereMaintenance:
+            dto.statut === StatutPoste.DISPONIBLE ? new Date() : row.dateDerniereMaintenance,
+        },
+      });
+
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'Poste',
+        entityId: id,
+        actorId,
+        details: { statutAvant: row.statut, statutApres: dto.statut },
+      });
+
+      return poste;
     });
 
     this.logger.log(`Poste ${id} → statut ${dto.statut}`);

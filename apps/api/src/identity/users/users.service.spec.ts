@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { AuditService } from '../../common/audit/audit.service';
 import { UsersService } from './users.service';
 
 interface PrismaMock {
@@ -20,6 +21,9 @@ interface PrismaMock {
   refreshToken: {
     updateMany: jest.Mock;
   };
+  auditLog: {
+    create: jest.Mock;
+  };
   /** Transaction interactive : exécute le callback avec le mock lui-même comme `tx`. */
   $transaction: jest.Mock;
 }
@@ -37,9 +41,14 @@ const USER = {
 
 const ROLE = { id: 'role-1', nomRole: 'SCOLARITE' };
 
+/** Acteur des mutations. En test unitaire, Prisma est mocké : aucune contrainte
+ *  de clé étrangère ne s'applique, une valeur constante suffit. */
+const acteurId = 'acteur-1';
+
 describe('UsersService', () => {
   let service: UsersService;
   let prisma: PrismaMock;
+  let audit: AuditService;
 
   beforeEach(() => {
     prisma = {
@@ -51,7 +60,13 @@ describe('UsersService', () => {
         update: jest.fn().mockResolvedValue(USER),
       },
       utilisateurRole: {
-        findUnique: jest.fn().mockResolvedValue({ utilisateurId: 'user-1', roleId: 'role-1' }),
+        // `role` est inclus : removeRole capture le nom du rôle AVANT de
+        // supprimer la liaison, pour ne pas relire ce qu'il vient d'effacer.
+        findUnique: jest.fn().mockResolvedValue({
+          utilisateurId: 'user-1',
+          roleId: 'role-1',
+          role: { nomRole: 'SCOLARITE' },
+        }),
         upsert: jest.fn().mockResolvedValue({ utilisateurId: 'user-1', roleId: 'role-1' }),
         delete: jest.fn().mockResolvedValue({ utilisateurId: 'user-1', roleId: 'role-1' }),
       },
@@ -61,10 +76,27 @@ describe('UsersService', () => {
       refreshToken: {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new UsersService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new UsersService(prisma as never, audit);
   });
+
+  /** Dernière entrée d'audit soumise à AuditService. */
+  function dernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][1];
+  }
+
+  /** Client Prisma avec lequel l'audit a été écrit. */
+  function clientDuDernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][0];
+  }
 
   // ── findAll ───────────────────────────────────────────────────────────────
 
@@ -146,7 +178,7 @@ describe('UsersService', () => {
       prenom: 'Abdourahmane',
       email: 'a.diallo@isseg.edu',
       motDePasse: 'MotDePasse123!',
-    });
+    }, acteurId);
 
     const data = prisma.utilisateur.create.mock.calls[0][0].data;
     expect(data.motDePasseHash).toMatch(/^\$2[aby]\$12\$/);
@@ -163,7 +195,7 @@ describe('UsersService', () => {
       email: 'a.diallo@isseg.edu',
       motDePasse: 'MotDePasse123!',
       roleIds: ['role-1', 'role-2'],
-    });
+    }, acteurId);
 
     expect(prisma.utilisateur.create.mock.calls[0][0].data.roles).toEqual({
       create: [{ roleId: 'role-1' }, { roleId: 'role-2' }],
@@ -179,7 +211,7 @@ describe('UsersService', () => {
         prenom: 'Abdourahmane',
         email: 'a.diallo@isseg.edu',
         motDePasse: 'MotDePasse123!',
-      }),
+      }, acteurId),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.utilisateur.create).not.toHaveBeenCalled();
   });
@@ -187,7 +219,7 @@ describe('UsersService', () => {
   // ── update ────────────────────────────────────────────────────────────────
 
   it('update : applique les champs fournis', async () => {
-    await service.update('user-1', { nom: 'Barry' });
+    await service.update('user-1', { nom: 'Barry' }, acteurId);
 
     expect(prisma.utilisateur.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'user-1' }, data: { nom: 'Barry' } }),
@@ -197,7 +229,7 @@ describe('UsersService', () => {
   it('update : bascule estActif', async () => {
     prisma.utilisateur.update.mockResolvedValue({ ...USER, estActif: false });
 
-    const result = await service.update('user-1', { estActif: false });
+    const result = await service.update('user-1', { estActif: false }, acteurId);
 
     expect(prisma.utilisateur.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { estActif: false } }),
@@ -208,7 +240,7 @@ describe('UsersService', () => {
   it('update : introuvable → NotFoundException', async () => {
     prisma.utilisateur.findUnique.mockResolvedValue(null);
 
-    await expect(service.update('missing', { nom: 'Barry' })).rejects.toBeInstanceOf(
+    await expect(service.update('missing', { nom: 'Barry' }, acteurId)).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
@@ -218,7 +250,7 @@ describe('UsersService', () => {
       .mockResolvedValueOnce(USER) // findRowOrThrow
       .mockResolvedValueOnce({ id: 'autre', email: 'pris@isseg.edu' }); // assertEmailFree
 
-    await expect(service.update('user-1', { email: 'pris@isseg.edu' })).rejects.toBeInstanceOf(
+    await expect(service.update('user-1', { email: 'pris@isseg.edu' }, acteurId)).rejects.toBeInstanceOf(
       ConflictException,
     );
     expect(prisma.utilisateur.update).not.toHaveBeenCalled();
@@ -230,7 +262,7 @@ describe('UsersService', () => {
       .mockResolvedValueOnce(USER); // assertEmailFree → même id
 
     await expect(
-      service.update('user-1', { email: 'a.diallo@isseg.edu' }),
+      service.update('user-1', { email: 'a.diallo@isseg.edu' }, acteurId),
     ).resolves.toBeDefined();
     expect(prisma.utilisateur.update).toHaveBeenCalled();
   });
@@ -238,7 +270,7 @@ describe('UsersService', () => {
   // ── remove (soft delete) ──────────────────────────────────────────────────
 
   it('remove : désactive le compte au lieu de le supprimer', async () => {
-    await service.remove('user-1');
+    await service.remove('user-1', acteurId);
 
     expect(prisma.utilisateur.update).toHaveBeenCalledWith({
       where: { id: 'user-1' },
@@ -249,12 +281,12 @@ describe('UsersService', () => {
   it('remove : introuvable → NotFoundException', async () => {
     prisma.utilisateur.findUnique.mockResolvedValue(null);
 
-    await expect(service.remove('missing')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.remove('missing', acteurId)).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.utilisateur.update).not.toHaveBeenCalled();
   });
 
   it('remove : révoque les refresh tokens actifs de l\'utilisateur', async () => {
-    await service.remove('user-1');
+    await service.remove('user-1', acteurId);
 
     expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
       where: { utilisateurId: 'user-1', isRevoked: false },
@@ -265,7 +297,7 @@ describe('UsersService', () => {
   // ── changePassword ────────────────────────────────────────────────────────
 
   it('changePassword : écrit un hash bcrypt, jamais le mot de passe en clair', async () => {
-    await service.changePassword('user-1', { nouveauMotDePasse: 'NouveauPass123!' });
+    await service.changePassword('user-1', { nouveauMotDePasse: 'NouveauPass123!' }, acteurId);
 
     const call = prisma.utilisateur.update.mock.calls[0][0];
     expect(call.where).toEqual({ id: 'user-1' });
@@ -277,13 +309,13 @@ describe('UsersService', () => {
     prisma.utilisateur.findUnique.mockResolvedValue(null);
 
     await expect(
-      service.changePassword('missing', { nouveauMotDePasse: 'NouveauPass123!' }),
+      service.changePassword('missing', { nouveauMotDePasse: 'NouveauPass123!' }, acteurId),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.utilisateur.update).not.toHaveBeenCalled();
   });
 
   it('changePassword : révoque les sessions actives de l\'utilisateur', async () => {
-    await service.changePassword('user-1', { nouveauMotDePasse: 'NouveauPass123!' });
+    await service.changePassword('user-1', { nouveauMotDePasse: 'NouveauPass123!' }, acteurId);
 
     expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
       where: { utilisateurId: 'user-1', isRevoked: false },
@@ -294,7 +326,7 @@ describe('UsersService', () => {
   // ── assignRole / removeRole ───────────────────────────────────────────────
 
   it('assignRole : upsert idempotent sur la table de liaison', async () => {
-    await service.assignRole('user-1', 'role-1');
+    await service.assignRole('user-1', 'role-1', acteurId);
 
     expect(prisma.utilisateurRole.upsert).toHaveBeenCalledWith({
       where: { utilisateurId_roleId: { utilisateurId: 'user-1', roleId: 'role-1' } },
@@ -306,7 +338,7 @@ describe('UsersService', () => {
   it('assignRole : utilisateur introuvable → NotFoundException', async () => {
     prisma.utilisateur.findUnique.mockResolvedValue(null);
 
-    await expect(service.assignRole('missing', 'role-1')).rejects.toBeInstanceOf(
+    await expect(service.assignRole('missing', 'role-1', acteurId)).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(prisma.utilisateurRole.upsert).not.toHaveBeenCalled();
@@ -315,14 +347,14 @@ describe('UsersService', () => {
   it('assignRole : rôle introuvable → NotFoundException', async () => {
     prisma.role.findUnique.mockResolvedValue(null);
 
-    await expect(service.assignRole('user-1', 'missing')).rejects.toBeInstanceOf(
+    await expect(service.assignRole('user-1', 'missing', acteurId)).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(prisma.utilisateurRole.upsert).not.toHaveBeenCalled();
   });
 
   it('removeRole : supprime la liaison existante', async () => {
-    await service.removeRole('user-1', 'role-1');
+    await service.removeRole('user-1', 'role-1', acteurId);
 
     expect(prisma.utilisateurRole.delete).toHaveBeenCalledWith({
       where: { utilisateurId_roleId: { utilisateurId: 'user-1', roleId: 'role-1' } },
@@ -332,7 +364,7 @@ describe('UsersService', () => {
   it('removeRole : rôle non attribué → NotFoundException', async () => {
     prisma.utilisateurRole.findUnique.mockResolvedValue(null);
 
-    await expect(service.removeRole('user-1', 'role-9')).rejects.toBeInstanceOf(
+    await expect(service.removeRole('user-1', 'role-9', acteurId)).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(prisma.utilisateurRole.delete).not.toHaveBeenCalled();
@@ -341,9 +373,116 @@ describe('UsersService', () => {
   it('removeRole : utilisateur introuvable → NotFoundException', async () => {
     prisma.utilisateur.findUnique.mockResolvedValue(null);
 
-    await expect(service.removeRole('missing', 'role-1')).rejects.toBeInstanceOf(
+    await expect(service.removeRole('missing', 'role-1', acteurId)).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(prisma.utilisateurRole.delete).not.toHaveBeenCalled();
+  });
+
+  // ── Audit métier (BACK-01) ─────────────────────────────────────────────────
+
+  describe('audit métier', () => {
+    it("create : CREATE sur l'utilisateur créé, attribué à l'acteur", async () => {
+      prisma.utilisateur.findUnique.mockResolvedValue(null);
+      await service.create(
+        { nom: 'A', prenom: 'B', email: 'a@b.local', motDePasse: 'Passw0rd!' } as never,
+        acteurId,
+      );
+
+      const entree = dernierAudit();
+      expect(entree.action).toBe('CREATE');
+      expect(entree.entity).toBe('Utilisateur');
+      expect(entree.entityId).toBe(USER.id);
+      expect(entree.actorId).toBe(acteurId);
+      // Acteur et cible sont bien deux notions distinctes.
+      expect(entree.actorId).not.toBe(entree.entityId);
+    });
+
+    it("create : ni le mot de passe ni son hash n'atteignent l'audit", async () => {
+      prisma.utilisateur.findUnique.mockResolvedValue(null);
+      await service.create(
+        { nom: 'A', prenom: 'B', email: 'a@b.local', motDePasse: 'Passw0rd!' } as never,
+        acteurId,
+      );
+
+      const serialise = JSON.stringify(dernierAudit().details);
+      expect(serialise).not.toContain('Passw0rd!');
+      expect(serialise.toLowerCase()).not.toContain('hash');
+    });
+
+    it('update : UPDATE, et seuls les NOMS des champs modifiés sont journalisés', async () => {
+      await service.update('user-1', { nom: 'Nouveau' } as never, acteurId);
+
+      const entree = dernierAudit();
+      expect(entree.action).toBe('UPDATE');
+      expect(entree.entity).toBe('Utilisateur');
+      expect(entree.entityId).toBe('user-1');
+      expect(entree.details).toEqual({ champsModifies: ['nom'] });
+      expect(JSON.stringify(entree.details)).not.toContain('Nouveau');
+    });
+
+    it('remove : DELETE sur la cible désactivée', async () => {
+      await service.remove('user-1', acteurId);
+
+      const entree = dernierAudit();
+      expect(entree.action).toBe('DELETE');
+      expect(entree.entity).toBe('Utilisateur');
+      expect(entree.entityId).toBe('user-1');
+      expect(entree.actorId).toBe(acteurId);
+    });
+
+    it('changePassword : UPDATE journalisant le fait, jamais le mot de passe', async () => {
+      await service.changePassword(
+        'user-1',
+        { nouveauMotDePasse: 'TresSecret456!' } as never,
+        acteurId,
+      );
+
+      const entree = dernierAudit();
+      expect(entree.action).toBe('UPDATE');
+      expect(entree.entityId).toBe('user-1');
+      expect(entree.details).toMatchObject({ motDePasseModifie: true });
+      expect(JSON.stringify(entree.details)).not.toContain('TresSecret456!');
+    });
+
+    it("assignRole : CREATE sur l'utilisateur, le rôle restant un détail", async () => {
+      await service.assignRole('user-1', 'role-1', acteurId);
+
+      const entree = dernierAudit();
+      expect(entree.action).toBe('CREATE');
+      expect(entree.entity).toBe('Utilisateur');
+      expect(entree.entityId).toBe('user-1');
+      expect(entree.details).toMatchObject({ roleId: 'role-1' });
+    });
+
+    it("removeRole : DELETE sur l'utilisateur", async () => {
+      await service.removeRole('user-1', 'role-1', acteurId);
+
+      const entree = dernierAudit();
+      expect(entree.action).toBe('DELETE');
+      expect(entree.entity).toBe('Utilisateur');
+      expect(entree.entityId).toBe('user-1');
+      expect(entree.details).toMatchObject({ roleId: 'role-1' });
+    });
+
+    it("l'audit est écrit avec le client de la transaction, pas hors d'elle", async () => {
+      await service.remove('user-1', acteurId);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      // Le mock passe `prisma` lui-même comme `tx` : on vérifie que le client
+      // transmis à AuditService est bien celui fourni par la transaction. La
+      // garantie forte d'atomicité est vérifiée sur base réelle dans
+      // users.service.integration-spec.ts.
+      expect(clientDuDernierAudit()).toBe(prisma);
+    });
+
+    it('une mutation en échec n\'écrit aucun audit', async () => {
+      prisma.utilisateur.update.mockRejectedValueOnce(new Error('contrainte violée'));
+
+      await expect(service.update('user-1', { nom: 'X' } as never, acteurId)).rejects.toThrow(
+        'contrainte violée',
+      );
+      expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { StatutValidation } from '@prisma/client';
+import { AuditService } from '../../common/audit/audit.service';
 import { NoteEtudiantService } from './note-etudiant.service';
 
 // ── Mock Prisma ───────────────────────────────────────────────────────────────
@@ -14,6 +15,11 @@ interface PrismaMock {
   epreuve: { findUnique: jest.Mock };
   inscription: { findUnique: jest.Mock };
   enseignant: { findFirst: jest.Mock };
+  auditLog: {
+    create: jest.Mock;
+  };
+  /** Transaction interactive : le callback reçoit le mock lui-même. */
+  $transaction: jest.Mock;
 }
 
 const EPREUVE_ID = 'ep-1';
@@ -98,8 +104,12 @@ function makeDto(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** Acteur des mutations. Prisma est mocké : aucune contrainte de clé étrangère. */
+const acteurId = 'acteur-1';
+
 describe('NoteEtudiantService — create', () => {
   let service: NoteEtudiantService;
+  let audit: AuditService;
   let prisma: PrismaMock;
 
   const dto = { epreuveId: EPREUVE_ID, inscriptionId: INSCRIPTION_ID, noteBrute: 14.5 };
@@ -116,8 +126,14 @@ describe('NoteEtudiantService — create', () => {
       epreuve: { findUnique: jest.fn() },
       inscription: { findUnique: jest.fn() },
       enseignant: { findFirst: jest.fn() },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new NoteEtudiantService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new NoteEtudiantService(prisma as never, audit);
   });
 
   it('1 — création réussie par l’enseignant propriétaire', async () => {
@@ -234,6 +250,7 @@ describe('NoteEtudiantService — create', () => {
 
 describe('NoteEtudiantService — findAll', () => {
   let service: NoteEtudiantService;
+  let audit: AuditService;
   let prisma: PrismaMock;
 
   beforeEach(() => {
@@ -248,8 +265,14 @@ describe('NoteEtudiantService — findAll', () => {
       epreuve: { findUnique: jest.fn() },
       inscription: { findUnique: jest.fn() },
       enseignant: { findFirst: jest.fn() },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new NoteEtudiantService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new NoteEtudiantService(prisma as never, audit);
   });
 
   it('1 — ADMIN, liste sans filtre : findMany appelé, résultats enrichis mappés via toDto', async () => {
@@ -492,6 +515,7 @@ describe('NoteEtudiantService — findAll', () => {
 
 describe('NoteEtudiantService — findOne', () => {
   let service: NoteEtudiantService;
+  let audit: AuditService;
   let prisma: PrismaMock;
 
   const NOTE_ID = 'note-1';
@@ -508,8 +532,14 @@ describe('NoteEtudiantService — findOne', () => {
       epreuve: { findUnique: jest.fn() },
       inscription: { findUnique: jest.fn() },
       enseignant: { findFirst: jest.fn() },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new NoteEtudiantService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new NoteEtudiantService(prisma as never, audit);
   });
 
   it('1 — récupération réussie : DTO complet enrichi retourné', async () => {
@@ -603,6 +633,7 @@ interface TxMock {
 }
 interface PrismaMockTx {
   noteEtudiant: { findUnique: jest.Mock };
+  auditLog: { create: jest.Mock };
   $transaction: jest.Mock;
 }
 
@@ -641,6 +672,7 @@ function makeNoteWithChain(
 
 describe('NoteEtudiantService — update', () => {
   let service: NoteEtudiantService;
+  let audit: AuditService;
   let prisma: PrismaMockTx;
   let tx: TxMock;
 
@@ -652,8 +684,13 @@ describe('NoteEtudiantService — update', () => {
     prisma = {
       noteEtudiant: { findUnique: jest.fn() },
       $transaction: jest.fn((cb: (t: TxMock) => unknown) => cb(tx)),
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
     };
-    service = new NoteEtudiantService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new NoteEtudiantService(prisma as never, audit);
   });
 
   it('1 — modification réussie par l’enseignant propriétaire', async () => {
@@ -815,11 +852,13 @@ describe('NoteEtudiantService — update', () => {
 interface PrismaMockRemove {
   noteEtudiant: { findUnique: jest.Mock; delete: jest.Mock };
   noteEtudiantHistory: { count: jest.Mock; delete: jest.Mock; deleteMany: jest.Mock };
+  auditLog: { create: jest.Mock };
   $transaction: jest.Mock;
 }
 
 describe('NoteEtudiantService — remove', () => {
   let service: NoteEtudiantService;
+  let audit: AuditService;
   let prisma: PrismaMockRemove;
 
   const NOTE_ID = 'note-1';
@@ -828,9 +867,14 @@ describe('NoteEtudiantService — remove', () => {
     prisma = {
       noteEtudiant: { findUnique: jest.fn(), delete: jest.fn() },
       noteEtudiantHistory: { count: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
-      $transaction: jest.fn(),
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new NoteEtudiantService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new NoteEtudiantService(prisma as never, audit);
   });
 
   it('1 — suppression réussie : note existante, aucun historique', async () => {
@@ -838,7 +882,7 @@ describe('NoteEtudiantService — remove', () => {
     prisma.noteEtudiantHistory.count.mockResolvedValue(0);
     prisma.noteEtudiant.delete.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
 
-    await service.remove(NOTE_ID);
+    await service.remove(NOTE_ID, acteurId);
 
     expect(prisma.noteEtudiant.delete).toHaveBeenCalledWith({ where: { id: NOTE_ID } });
   });
@@ -846,7 +890,7 @@ describe('NoteEtudiantService — remove', () => {
   it('2 — note inexistante → NotFoundException, aucun count, aucun delete', async () => {
     prisma.noteEtudiant.findUnique.mockResolvedValue(null);
 
-    await expect(service.remove('absent')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.remove('absent', acteurId)).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.noteEtudiantHistory.count).not.toHaveBeenCalled();
     expect(prisma.noteEtudiant.delete).not.toHaveBeenCalled();
   });
@@ -855,7 +899,7 @@ describe('NoteEtudiantService — remove', () => {
     prisma.noteEtudiant.findUnique.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
     prisma.noteEtudiantHistory.count.mockResolvedValue(1);
 
-    await expect(service.remove(NOTE_ID)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.remove(NOTE_ID, acteurId)).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.noteEtudiant.delete).not.toHaveBeenCalled();
   });
 
@@ -863,7 +907,7 @@ describe('NoteEtudiantService — remove', () => {
     prisma.noteEtudiant.findUnique.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
     prisma.noteEtudiantHistory.count.mockResolvedValue(3);
 
-    await expect(service.remove(NOTE_ID)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.remove(NOTE_ID, acteurId)).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.noteEtudiant.delete).not.toHaveBeenCalled();
   });
 
@@ -872,7 +916,7 @@ describe('NoteEtudiantService — remove', () => {
     prisma.noteEtudiantHistory.count.mockResolvedValue(0);
     prisma.noteEtudiant.delete.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
 
-    await service.remove(NOTE_ID);
+    await service.remove(NOTE_ID, acteurId);
 
     expect(prisma.noteEtudiant.delete).toHaveBeenCalledTimes(1);
   });
@@ -882,21 +926,27 @@ describe('NoteEtudiantService — remove', () => {
     prisma.noteEtudiantHistory.count.mockResolvedValue(0);
     prisma.noteEtudiant.delete.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
 
-    await service.remove(NOTE_ID);
+    await service.remove(NOTE_ID, acteurId);
 
     expect(prisma.noteEtudiantHistory.count).toHaveBeenCalledWith({
       where: { noteEtudiantId: NOTE_ID },
     });
   });
 
-  it('7 — aucune transaction utilisée', async () => {
+  // Contrat INVERSÉ par BACK-01, à dessein. Ce test affirmait auparavant que
+  // `remove` n'ouvrait aucune transaction, ce qui était exact tant que la
+  // suppression était l'unique écriture. L'audit métier en ajoute une seconde :
+  // sans transaction, une note pourrait être supprimée sans laisser de trace.
+  // L'assertion est donc retournée volontairement, elle n'a pas été ajustée
+  // pour faire passer un test.
+  it('7 — suppression et audit dans une seule transaction', async () => {
     prisma.noteEtudiant.findUnique.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
     prisma.noteEtudiantHistory.count.mockResolvedValue(0);
     prisma.noteEtudiant.delete.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
 
-    await service.remove(NOTE_ID);
+    await service.remove(NOTE_ID, acteurId);
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it('8 — UUID transmis sans modification (findUnique puis delete)', async () => {
@@ -904,7 +954,7 @@ describe('NoteEtudiantService — remove', () => {
     prisma.noteEtudiantHistory.count.mockResolvedValue(0);
     prisma.noteEtudiant.delete.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
 
-    await service.remove(NOTE_ID);
+    await service.remove(NOTE_ID, acteurId);
 
     expect(prisma.noteEtudiant.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: NOTE_ID } }),
@@ -916,7 +966,7 @@ describe('NoteEtudiantService — remove', () => {
     prisma.noteEtudiant.findUnique.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
     prisma.noteEtudiantHistory.count.mockResolvedValue(1);
 
-    await expect(service.remove(NOTE_ID)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.remove(NOTE_ID, acteurId)).rejects.toBeInstanceOf(ConflictException);
 
     expect(prisma.noteEtudiant.delete).not.toHaveBeenCalled();
   });
@@ -936,7 +986,7 @@ describe('NoteEtudiantService — remove', () => {
       return makeCreatedRow({ id: NOTE_ID });
     });
 
-    await service.remove(NOTE_ID);
+    await service.remove(NOTE_ID, acteurId);
 
     expect(order).toEqual(['find', 'count', 'delete']);
   });
@@ -946,7 +996,7 @@ describe('NoteEtudiantService — remove', () => {
     prisma.noteEtudiantHistory.count.mockResolvedValue(0);
     prisma.noteEtudiant.delete.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
 
-    await service.remove(NOTE_ID);
+    await service.remove(NOTE_ID, acteurId);
 
     expect(prisma.noteEtudiantHistory.delete).not.toHaveBeenCalled();
     expect(prisma.noteEtudiantHistory.deleteMany).not.toHaveBeenCalled();
@@ -957,7 +1007,7 @@ describe('NoteEtudiantService — remove', () => {
     prisma.noteEtudiantHistory.count.mockResolvedValue(0);
     prisma.noteEtudiant.delete.mockResolvedValue(makeCreatedRow({ id: NOTE_ID }));
 
-    const result = await service.remove(NOTE_ID);
+    const result = await service.remove(NOTE_ID, acteurId);
 
     expect(result).toBeUndefined();
   });

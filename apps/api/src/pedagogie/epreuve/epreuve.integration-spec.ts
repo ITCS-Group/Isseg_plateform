@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaClient, StatutValidation, TypeEpreuve } from '@prisma/client';
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
+import { AuditService } from '../../common/audit/audit.service';
 import { EpreuveService } from './epreuve.service';
 
 // ── Utilitaires ──────────────────────────────────────────────────────────────
@@ -11,6 +12,11 @@ const uid = (p: string) => `${p}-${Date.now()}-${seq++}`;
 const PAGE_DEFAUT = { page: 1, limit: 20 };
 
 let prisma: PrismaClient;
+/**
+ * Acteur des mutations, présent RÉELLEMENT en base : `AuditLog.utilisateurId`
+ * porte une clé étrangère vers `Utilisateur`.
+ */
+let acteurId: string;
 let service: EpreuveService;
 
 async function makeCoursScenarise(statutValidation: StatutValidation = StatutValidation.APPROUVE) {
@@ -78,7 +84,7 @@ async function makeInscription() {
 // ── Setup ────────────────────────────────────────────────────────────────────
 beforeAll(() => {
   prisma = createTestPrisma(); // garde-fou : refuse si != isseg_test
-  service = new EpreuveService(prisma as never);
+  service = new EpreuveService(prisma as never, new AuditService());
 });
 
 afterAll(async () => {
@@ -87,6 +93,17 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateAll(prisma);
+
+  const acteur = await prisma.utilisateur.create({
+    data: {
+      nom: 'Admin',
+      prenom: 'Acteur',
+      email: `acteur-audit-${Date.now()}-${Math.random()}@isseg-test.local`,
+      motDePasseHash: 'hash-non-significatif',
+      estActif: true,
+    },
+  });
+  acteurId = acteur.id;
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -96,7 +113,7 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
     it('A1 — création nominale : persistée en base avec les bons champs', async () => {
       const coursClasse = await makeCoursClasse(StatutValidation.APPROUVE);
 
-      const result = await service.create({ coursClasseId: coursClasse.id, type: TypeEpreuve.CC });
+      const result = await service.create({ coursClasseId: coursClasse.id, type: TypeEpreuve.CC }, acteurId);
 
       expect(result.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/));
       expect(result.coursClasseId).toBe(coursClasse.id);
@@ -111,7 +128,7 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
 
     it('A2 — CoursClasse inexistant : 404 (NotFoundException), aucune écriture', async () => {
       await expect(
-        service.create({ coursClasseId: '00000000-0000-4000-8000-000000000000', type: TypeEpreuve.CC }),
+        service.create({ coursClasseId: '00000000-0000-4000-8000-000000000000', type: TypeEpreuve.CC }, acteurId),
       ).rejects.toBeInstanceOf(NotFoundException);
 
       expect(await prisma.epreuve.count()).toBe(0);
@@ -121,7 +138,7 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
       const coursClasse = await makeCoursClasse(StatutValidation.EN_ATTENTE);
 
       await expect(
-        service.create({ coursClasseId: coursClasse.id, type: TypeEpreuve.CC }),
+        service.create({ coursClasseId: coursClasse.id, type: TypeEpreuve.CC }, acteurId),
       ).rejects.toBeInstanceOf(ConflictException);
 
       expect(await prisma.epreuve.count()).toBe(0);
@@ -130,8 +147,8 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
     it('A4 — deux Epreuves du même type pour le même CoursClasse : les deux créations réussissent', async () => {
       const coursClasse = await makeCoursClasse(StatutValidation.APPROUVE);
 
-      const e1 = await service.create({ coursClasseId: coursClasse.id, type: TypeEpreuve.CC });
-      const e2 = await service.create({ coursClasseId: coursClasse.id, type: TypeEpreuve.CC });
+      const e1 = await service.create({ coursClasseId: coursClasse.id, type: TypeEpreuve.CC }, acteurId);
+      const e2 = await service.create({ coursClasseId: coursClasse.id, type: TypeEpreuve.CC }, acteurId);
 
       expect(e1.id).not.toBe(e2.id);
       const rows = await prisma.epreuve.findMany({ where: { coursClasseId: coursClasse.id } });
@@ -144,8 +161,8 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
     it('B1 — liste complète', async () => {
       const cc1 = await makeCoursClasse();
       const cc2 = await makeCoursClasse();
-      await service.create({ coursClasseId: cc1.id, type: TypeEpreuve.CC });
-      await service.create({ coursClasseId: cc2.id, type: TypeEpreuve.EXAMEN });
+      await service.create({ coursClasseId: cc1.id, type: TypeEpreuve.CC }, acteurId);
+      await service.create({ coursClasseId: cc2.id, type: TypeEpreuve.EXAMEN }, acteurId);
 
       const result = await service.findAll({ ...PAGE_DEFAUT });
 
@@ -156,8 +173,8 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
     it('B2 — filtre coursClasseId', async () => {
       const cc1 = await makeCoursClasse();
       const cc2 = await makeCoursClasse();
-      const e1 = await service.create({ coursClasseId: cc1.id, type: TypeEpreuve.CC });
-      await service.create({ coursClasseId: cc2.id, type: TypeEpreuve.CC });
+      const e1 = await service.create({ coursClasseId: cc1.id, type: TypeEpreuve.CC }, acteurId);
+      await service.create({ coursClasseId: cc2.id, type: TypeEpreuve.CC }, acteurId);
 
       const result = await service.findAll({ ...PAGE_DEFAUT, coursClasseId: cc1.id });
 
@@ -168,8 +185,8 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
 
     it('B3 — filtre type', async () => {
       const cc = await makeCoursClasse();
-      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC });
-      const tp = await service.create({ coursClasseId: cc.id, type: TypeEpreuve.TP });
+      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC }, acteurId);
+      const tp = await service.create({ coursClasseId: cc.id, type: TypeEpreuve.TP }, acteurId);
 
       const result = await service.findAll({ ...PAGE_DEFAUT, type: TypeEpreuve.TP });
 
@@ -181,9 +198,9 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
     it('B4 — combinaison coursClasseId + type', async () => {
       const cc1 = await makeCoursClasse();
       const cc2 = await makeCoursClasse();
-      const target = await service.create({ coursClasseId: cc1.id, type: TypeEpreuve.EXAMEN });
-      await service.create({ coursClasseId: cc1.id, type: TypeEpreuve.CC });
-      await service.create({ coursClasseId: cc2.id, type: TypeEpreuve.EXAMEN });
+      const target = await service.create({ coursClasseId: cc1.id, type: TypeEpreuve.EXAMEN }, acteurId);
+      await service.create({ coursClasseId: cc1.id, type: TypeEpreuve.CC }, acteurId);
+      await service.create({ coursClasseId: cc2.id, type: TypeEpreuve.EXAMEN }, acteurId);
 
       const result = await service.findAll({
         ...PAGE_DEFAUT,
@@ -201,7 +218,7 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
     it('B5 — page par défaut : meta cohérent avec le nombre réel d’enregistrements', async () => {
       const cc = await makeCoursClasse();
       for (let i = 0; i < 3; i += 1) {
-        await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC });
+        await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC }, acteurId);
       }
 
       const result = await service.findAll({ ...PAGE_DEFAUT });
@@ -213,7 +230,7 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
     it('B6 — dernière page partielle : reste des éléments, sans doublon', async () => {
       const cc = await makeCoursClasse();
       for (let i = 0; i < 5; i += 1) {
-        await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC });
+        await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC }, acteurId);
       }
 
       const page1 = await service.findAll({ page: 1, limit: 2 });
@@ -229,7 +246,7 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
 
     it('B7 — page au-delà du dernier index : data vide, meta.total inchangé', async () => {
       const cc = await makeCoursClasse();
-      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC });
+      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC }, acteurId);
 
       const result = await service.findAll({ page: 5, limit: 20 });
 
@@ -239,9 +256,9 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
 
     it('B8 — pagination + filtre : meta.total ne compte que les lignes filtrées', async () => {
       const cc = await makeCoursClasse();
-      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.TP });
-      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.TP });
-      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.EXAMEN });
+      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.TP }, acteurId);
+      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.TP }, acteurId);
+      await service.create({ coursClasseId: cc.id, type: TypeEpreuve.EXAMEN }, acteurId);
 
       const result = await service.findAll({ page: 1, limit: 1, type: TypeEpreuve.TP });
 
@@ -254,7 +271,7 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
   describe('findOne', () => {
     it('C1 — Epreuve existante : données conformes', async () => {
       const cc = await makeCoursClasse();
-      const created = await service.create({ coursClasseId: cc.id, type: TypeEpreuve.RATTRAPAGE });
+      const created = await service.create({ coursClasseId: cc.id, type: TypeEpreuve.RATTRAPAGE }, acteurId);
 
       const result = await service.findOne(created.id);
 
@@ -272,31 +289,49 @@ describe('Intégration — EpreuveService (isseg_test)', () => {
   describe('remove', () => {
     it('D1 — suppression nominale : absente en base ensuite', async () => {
       const cc = await makeCoursClasse();
-      const created = await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC });
+      const created = await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC }, acteurId);
 
-      await service.remove(created.id);
+      await service.remove(created.id, acteurId);
 
       expect(await prisma.epreuve.findUnique({ where: { id: created.id } })).toBeNull();
     });
 
     it('D2 — Epreuve inexistante : NotFoundException', async () => {
-      await expect(service.remove('00000000-0000-4000-8000-000000000000')).rejects.toBeInstanceOf(
+      await expect(service.remove('00000000-0000-4000-8000-000000000000', acteurId)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it('D3 — suppression bloquée par une NoteEtudiant rattachée : Epreuve et NoteEtudiant conservées', async () => {
       const cc = await makeCoursClasse();
-      const created = await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC });
+      const created = await service.create({ coursClasseId: cc.id, type: TypeEpreuve.CC }, acteurId);
       const inscription = await makeInscription();
       const note = await prisma.noteEtudiant.create({
         data: { epreuveId: created.id, inscriptionId: inscription.id, noteBrute: 15 },
       });
 
-      await expect(service.remove(created.id)).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.remove(created.id, acteurId)).rejects.toBeInstanceOf(ConflictException);
 
       expect(await prisma.epreuve.findUnique({ where: { id: created.id } })).not.toBeNull();
       expect(await prisma.noteEtudiant.findUnique({ where: { id: note.id } })).not.toBeNull();
+    });
+  });
+
+  // ── Audit métier (BACK-01, lot 4) — vérifié en base ───────────────────────
+
+  describe('audit métier', () => {
+    it('ATOMICITÉ : un audit impossible annule la création de l\'épreuve', async () => {
+      const coursClasse = await makeCoursClasse();
+
+      const avant = await prisma.epreuve.count({ where: { coursClasseId: coursClasse.id } });
+      await expect(
+        service.create(
+          { coursClasseId: coursClasse.id, type: 'CC' } as never,
+          '00000000-0000-0000-0000-000000000000',
+        ),
+      ).rejects.toBeDefined();
+
+      expect(await prisma.epreuve.count({ where: { coursClasseId: coursClasse.id } })).toBe(avant);
     });
   });
 });

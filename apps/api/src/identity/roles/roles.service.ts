@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { ListRoleQueryDto } from './dto/list-role-query.dto';
@@ -34,7 +35,10 @@ type RoleRow = Prisma.RoleGetPayload<{ select: typeof ROLE_SELECT }>;
 export class RolesService {
   private readonly logger = new Logger(RolesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
@@ -70,19 +74,31 @@ export class RolesService {
 
   // ── Création ──────────────────────────────────────────────────────────────
 
-  async create(dto: CreateRoleDto): Promise<RoleResponseDto> {
+  async create(dto: CreateRoleDto, actorId: string): Promise<RoleResponseDto> {
     await this.assertNameFree(dto.nomRole);
 
-    const role = await this.prisma.role.create({
-      data: {
-        nomRole: dto.nomRole,
-        ...(dto.permissionIds?.length && {
-          permissions: {
-            create: dto.permissionIds.map((permissionId) => ({ permissionId })),
-          },
-        }),
-      },
-      select: ROLE_SELECT,
+    const role = await this.prisma.$transaction(async (tx) => {
+      const cree = await tx.role.create({
+        data: {
+          nomRole: dto.nomRole,
+          ...(dto.permissionIds?.length && {
+            permissions: {
+              create: dto.permissionIds.map((permissionId) => ({ permissionId })),
+            },
+          }),
+        },
+        select: ROLE_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Role',
+        entityId: cree.id,
+        actorId,
+        details: { nomRole: cree.nomRole, permissionIds: dto.permissionIds ?? [] },
+      });
+
+      return cree;
     });
 
     this.logger.log(`Rôle créé : ${role.nomRole}`);
@@ -91,15 +107,31 @@ export class RolesService {
 
   // ── Mise à jour ───────────────────────────────────────────────────────────
 
-  async update(id: string, dto: UpdateRoleDto): Promise<RoleResponseDto> {
+  async update(
+    id: string,
+    dto: UpdateRoleDto,
+    actorId: string,
+  ): Promise<RoleResponseDto> {
     await this.findRowOrThrow(id);
 
     if (dto.nomRole) await this.assertNameFree(dto.nomRole, id);
 
-    const role = await this.prisma.role.update({
-      where: { id },
-      data: dto,
-      select: ROLE_SELECT,
+    const role = await this.prisma.$transaction(async (tx) => {
+      const modifie = await tx.role.update({
+        where: { id },
+        data: dto,
+        select: ROLE_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'Role',
+        entityId: id,
+        actorId,
+        details: { champsModifies: Object.keys(dto) },
+      });
+
+      return modifie;
     });
 
     return this.toDto(role);
@@ -107,8 +139,10 @@ export class RolesService {
 
   // ── Suppression ───────────────────────────────────────────────────────────
 
-  async remove(id: string): Promise<void> {
-    await this.findRowOrThrow(id);
+  async remove(id: string, actorId: string): Promise<void> {
+    // Le nom est capturé AVANT la suppression : l'audit ne doit jamais dépendre
+    // d'une relecture de la ligne qu'il vient d'effacer.
+    const role = await this.findRowOrThrow(id);
 
     const usersCount = await this.prisma.utilisateurRole.count({
       where: { roleId: id },
@@ -120,39 +154,83 @@ export class RolesService {
       );
     }
 
-    await this.prisma.role.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.role.delete({ where: { id } });
+
+      await this.audit.record(tx, {
+        action: 'DELETE',
+        entity: 'Role',
+        entityId: id,
+        actorId,
+        details: { nomRole: role.nomRole },
+      });
+    });
+
     this.logger.log(`Rôle supprimé : ${id}`);
   }
 
   // ── Gestion des permissions ───────────────────────────────────────────────
 
-  async assignPermission(roleId: string, permissionId: string): Promise<RoleResponseDto> {
+  async assignPermission(
+    roleId: string,
+    permissionId: string,
+    actorId: string,
+  ): Promise<RoleResponseDto> {
     await this.findRowOrThrow(roleId);
-    await this.assertPermissionExists(permissionId);
+    const permission = await this.assertPermissionExists(permissionId);
 
-    await this.prisma.rolePermission.upsert({
-      where: { roleId_permissionId: { roleId, permissionId } },
-      create: { roleId, permissionId },
-      update: {},
+    await this.prisma.$transaction(async (tx) => {
+      await tx.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId, permissionId } },
+        create: { roleId, permissionId },
+        update: {},
+      });
+
+      // La cible est le RÔLE : la question est « qu'est-il arrivé à ce rôle ».
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Role',
+        entityId: roleId,
+        actorId,
+        details: { permissionId, nomPermission: permission.nomPermission },
+      });
     });
 
     this.logger.log(`Permission ${permissionId} attribuée au rôle ${roleId}`);
     return this.findOne(roleId);
   }
 
-  async removePermission(roleId: string, permissionId: string): Promise<RoleResponseDto> {
+  async removePermission(
+    roleId: string,
+    permissionId: string,
+    actorId: string,
+  ): Promise<RoleResponseDto> {
     await this.findRowOrThrow(roleId);
 
     const link = await this.prisma.rolePermission.findUnique({
       where: { roleId_permissionId: { roleId, permissionId } },
+      include: { permission: { select: { nomPermission: true } } },
     });
 
     if (!link) {
       throw new NotFoundException('Cette permission n\'est pas attribuée à ce rôle');
     }
 
-    await this.prisma.rolePermission.delete({
-      where: { roleId_permissionId: { roleId, permissionId } },
+    // Nom capturé avant la suppression du lien.
+    const nomPermission = link.permission.nomPermission;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.rolePermission.delete({
+        where: { roleId_permissionId: { roleId, permissionId } },
+      });
+
+      await this.audit.record(tx, {
+        action: 'DELETE',
+        entity: 'Role',
+        entityId: roleId,
+        actorId,
+        details: { permissionId, nomPermission },
+      });
     });
 
     this.logger.log(`Permission ${permissionId} retirée du rôle ${roleId}`);
@@ -174,9 +252,15 @@ export class RolesService {
     }
   }
 
-  private async assertPermissionExists(permissionId: string): Promise<void> {
-    const perm = await this.prisma.permission.findUnique({ where: { id: permissionId } });
+  private async assertPermissionExists(
+    permissionId: string,
+  ): Promise<{ nomPermission: string }> {
+    const perm = await this.prisma.permission.findUnique({
+      where: { id: permissionId },
+      select: { nomPermission: true },
+    });
     if (!perm) throw new NotFoundException(`Permission introuvable (id: ${permissionId})`);
+    return perm;
   }
 
   private toDto(role: RoleRow): RoleResponseDto {

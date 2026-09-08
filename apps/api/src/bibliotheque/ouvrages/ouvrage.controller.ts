@@ -19,6 +19,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateOuvrageDto } from './dto/create-ouvrage.dto';
 import { ListOuvrageQueryDto } from './dto/list-ouvrage-query.dto';
@@ -52,8 +53,11 @@ export class OuvrageController {
   @ApiBody({ type: CreateOuvrageDto })
   @ApiResponse({ status: 201, type: OuvrageResponseDto })
   @ApiResponse({ status: 404, description: 'SectionBibliotheque introuvable' })
-  create(@Body() dto: CreateOuvrageDto): Promise<OuvrageResponseDto> {
-    return this.ouvrageService.create(dto);
+  create(
+    @Body() dto: CreateOuvrageDto,
+    @CurrentUser('id') actorId: string,
+  ): Promise<OuvrageResponseDto> {
+    return this.ouvrageService.create(dto, actorId);
   }
 
   // ── GET /api/v1/ouvrages/:id ──────────────────────────────────────────────
@@ -79,8 +83,9 @@ export class OuvrageController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateOuvrageDto,
+    @CurrentUser('id') actorId: string,
   ): Promise<OuvrageResponseDto> {
-    return this.ouvrageService.update(id, dto);
+    return this.ouvrageService.update(id, dto, actorId);
   }
 
   // ── DELETE /api/v1/ouvrages/:id ───────────────────────────────────────────
@@ -93,7 +98,10 @@ export class OuvrageController {
   @ApiResponse({ status: 204, description: 'Ouvrage supprimé' })
   @ApiResponse({ status: 404, description: 'Ouvrage introuvable' })
   @ApiResponse({ status: 409, description: 'Emprunts en cours sur cet ouvrage' })
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.ouvrageService.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') actorId: string,
+  ): Promise<void> {
+    return this.ouvrageService.remove(id, actorId);
   }
 }

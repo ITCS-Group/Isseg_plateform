@@ -19,6 +19,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { ListPermissionQueryDto } from './dto/list-permission-query.dto';
@@ -48,8 +49,11 @@ export class PermissionsController {
   @ApiBody({ type: CreatePermissionDto })
   @ApiResponse({ status: 201, type: PermissionResponseDto })
   @ApiResponse({ status: 409, description: 'Nom de permission déjà utilisé' })
-  create(@Body() dto: CreatePermissionDto): Promise<PermissionResponseDto> {
-    return this.permissionsService.create(dto);
+  create(
+    @Body() dto: CreatePermissionDto,
+    @CurrentUser('id') actorId: string,
+  ): Promise<PermissionResponseDto> {
+    return this.permissionsService.create(dto, actorId);
   }
 
   @Get(':id')
@@ -69,8 +73,9 @@ export class PermissionsController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePermissionDto,
+    @CurrentUser('id') actorId: string,
   ): Promise<PermissionResponseDto> {
-    return this.permissionsService.update(id, dto);
+    return this.permissionsService.update(id, dto, actorId);
   }
 
   @Delete(':id')
@@ -82,7 +87,10 @@ export class PermissionsController {
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Permission supprimée' })
   @ApiResponse({ status: 409, description: 'Permission encore utilisée par des rôles' })
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.permissionsService.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') actorId: string,
+  ): Promise<void> {
+    return this.permissionsService.remove(id, actorId);
   }
 }

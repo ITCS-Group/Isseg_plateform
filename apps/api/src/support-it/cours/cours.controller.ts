@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CoursSupportITService } from './cours.service';
 import { CoursSupportITResponseDto, PaginatedCoursSupportITResponseDto } from './dto/cours.response.dto';
@@ -17,8 +18,11 @@ export class CoursSupportITController {
   @ApiOperation({ summary: 'Créer un cours Support IT' })
   @ApiBody({ type: CreateCoursSupportITDto })
   @ApiResponse({ status: 201, type: CoursSupportITResponseDto })
-  create(@Body() dto: CreateCoursSupportITDto): Promise<CoursSupportITResponseDto> {
-    return this.coursService.create(dto);
+  create(
+    @Body() dto: CreateCoursSupportITDto,
+    @CurrentUser('id') actorId: string,
+  ): Promise<CoursSupportITResponseDto> {
+    return this.coursService.create(dto, actorId);
   }
 
   @Get()

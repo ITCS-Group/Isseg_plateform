@@ -112,7 +112,10 @@ export class NoteEtudiantController {
   @ApiResponse({ status: 204, description: 'Note supprimée' })
   @ApiResponse({ status: 404, description: 'Note introuvable' })
   @ApiResponse({ status: 409, description: 'Un historique existe pour cette note' })
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.noteEtudiantService.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') actorId: string,
+  ): Promise<void> {
+    return this.noteEtudiantService.remove(id, actorId);
   }
 }

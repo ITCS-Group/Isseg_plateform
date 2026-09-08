@@ -1,6 +1,7 @@
 import { NatureRequete, PrismaClient, SousServiceIT, StatutRequete } from '@prisma/client';
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
 import { RequeteService } from '../requetes/requete.service';
+import { AuditService } from '../../common/audit/audit.service';
 import { StatsService } from './stats.service';
 
 let seq = 0;
@@ -43,7 +44,7 @@ describe('Intégration — StatsService.syntheseMensuelle (isseg_test)', () => {
   // § Points techniques à surveiller, même symptôme déjà documenté sur
   // emprunt.service.integration-spec.ts).
   it('compte uniquement les requêtes du mois demandé, ventilées par sous-service/nature/statut', async () => {
-    const requeteService = new RequeteService(prisma as never);
+    const requeteService = new RequeteService(prisma as never, new AuditService());
     const statsService = new StatsService(prisma as never);
     const { user: demandeur } = await makePersonnel();
 

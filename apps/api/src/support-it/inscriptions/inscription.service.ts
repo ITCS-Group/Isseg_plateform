@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundExce
 import { Prisma, StatutInscriptionCoursSupportIT } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AttestationService } from '../attestations/attestation.service';
 import { CreateEvaluationSupportITDto } from './dto/create-evaluation.dto';
@@ -34,11 +35,22 @@ export class InscriptionCoursSupportITService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly attestationService: AttestationService,
+    private readonly audit: AuditService,
   ) {}
 
   // ── Inscription (self-service) ──────────────────────────────────────────
 
-  async enroll(coursId: string, participantId: string): Promise<InscriptionCoursSupportITResponseDto> {
+  /**
+   * `participantId` est la personne INSCRITE, `actorId` celle qui réalise
+   * l'inscription. Aujourd'hui le contrôleur passe le même utilisateur pour les
+   * deux (auto-inscription), mais les deux notions restent distinctes : si une
+   * inscription par un tiers est ouverte plus tard, seul le contrôleur change.
+   */
+  async enroll(
+    coursId: string,
+    participantId: string,
+    actorId: string,
+  ): Promise<InscriptionCoursSupportITResponseDto> {
     const cours = await this.prisma.coursSupportIT.findUnique({ where: { id: coursId } });
     if (!cours) {
       throw new NotFoundException(`Cours Support IT introuvable (id: ${coursId})`);
@@ -46,9 +58,21 @@ export class InscriptionCoursSupportITService {
 
     let row: InscriptionRow;
     try {
-      row = await this.prisma.inscriptionCoursSupportIT.create({
-        data: { coursId, participantId },
-        select: INSCRIPTION_SELECT,
+      row = await this.prisma.$transaction(async (tx) => {
+        const inscription = await tx.inscriptionCoursSupportIT.create({
+          data: { coursId, participantId },
+          select: INSCRIPTION_SELECT,
+        });
+
+        await this.audit.record(tx, {
+          action: 'CREATE',
+          entity: 'InscriptionCoursSupportIT',
+          entityId: inscription.id,
+          actorId,
+          details: { coursId, participantId, statut: inscription.statut },
+        });
+
+        return inscription;
       });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
@@ -109,7 +133,11 @@ export class InscriptionCoursSupportITService {
 
   // ── Évaluation (RESPONSABLE_IT, saisie manuelle) ────────────────────────
 
-  async evaluer(id: string, dto: CreateEvaluationSupportITDto): Promise<EvaluationSupportITResponseDto> {
+  async evaluer(
+    id: string,
+    dto: CreateEvaluationSupportITDto,
+    actorId: string,
+  ): Promise<EvaluationSupportITResponseDto> {
     const inscription = await this.prisma.inscriptionCoursSupportIT.findUnique({
       where: { id },
       include: {
@@ -134,6 +162,22 @@ export class InscriptionCoursSupportITService {
         where: { id },
         data: { statut: StatutInscriptionCoursSupportIT.TERMINE },
       });
+
+      // La cible est l'INSCRIPTION évaluée. L'acteur est l'évaluateur, jamais
+      // le participant. La note n'est pas journalisée : elle vit dans
+      // EvaluationSupportIT, l'audit ne dit que « qui a évalué quoi, quand ».
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'InscriptionCoursSupportIT',
+        entityId: id,
+        actorId,
+        details: {
+          statutAvant: inscription.statut,
+          statutApres: StatutInscriptionCoursSupportIT.TERMINE,
+          reussite: dto.statutReussite,
+        },
+      });
+
       return created;
     });
 

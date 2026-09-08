@@ -6,6 +6,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma, StatutAbandon } from '@prisma/client';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { PaginationMetaDto } from '../../common/dto/pagination.dto';
 import { AbandonListResponseDto } from './dto/abandon-list.response.dto';
@@ -49,7 +50,10 @@ type AbandonRow = Prisma.AbandonGetPayload<{ select: typeof ABANDON_SELECT }>;
 export class AbandonService {
   private readonly logger = new Logger(AbandonService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
@@ -121,6 +125,21 @@ export class AbandonService {
         data: { estActive: false },
       });
 
+      // `etudiantId` désigne l'étudiant concerné par l'abandon, jamais l'acteur :
+      // c'est un agent de la scolarité authentifié qui signale.
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Abandon',
+        entityId: row.id,
+        actorId,
+        details: {
+          etudiantId: dto.etudiantId,
+          anneeId: dto.anneeId,
+          statut: row.statut,
+          inscriptionDesactivee: inscription.id,
+        },
+      });
+
       return row;
     });
 
@@ -131,7 +150,7 @@ export class AbandonService {
   // ── Transitions ──────────────────────────────────────────────────────────
 
   /** CONSTATE → REPRISE_DEMANDEE */
-  async demanderReprise(id: string): Promise<AbandonResponseDto> {
+  async demanderReprise(id: string, actorId: string): Promise<AbandonResponseDto> {
     const updated = await this.prisma.$transaction(async (tx) => {
       const current = await tx.abandon.findUnique({ where: { id }, select: ABANDON_SELECT });
       if (!current) {
@@ -150,6 +169,19 @@ export class AbandonService {
       if (result.count === 0) {
         throw new ConflictException('Conflit de concurrence : l\'abandon a été modifié entre-temps');
       }
+
+      // Seule trace de QUI a demandé la reprise : le modèle Abandon ne porte
+      // aucun champ équivalent à signaleParId ou decideParId pour cette étape.
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'Abandon',
+        entityId: id,
+        actorId,
+        details: {
+          statutAvant: current.statut,
+          statutApres: StatutAbandon.REPRISE_DEMANDEE,
+        },
+      });
 
       this.logger.log(`Abandon ${id} : ${current.statut} → ${StatutAbandon.REPRISE_DEMANDEE}`);
       return tx.abandon.findUniqueOrThrow({ where: { id }, select: ABANDON_SELECT });
@@ -188,6 +220,19 @@ export class AbandonService {
           data: { estActive: true },
         });
       }
+
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'Abandon',
+        entityId: id,
+        actorId,
+        details: {
+          statutAvant: current.statut,
+          statutApres: target,
+          decision: dto.decision,
+          inscriptionReactivee: target === StatutAbandon.REPRISE_ACCORDEE,
+        },
+      });
 
       this.logger.log(`Abandon ${id} : ${current.statut} → ${target}`);
       return tx.abandon.findUniqueOrThrow({ where: { id }, select: ABANDON_SELECT });

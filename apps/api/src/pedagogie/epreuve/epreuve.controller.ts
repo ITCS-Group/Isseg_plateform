@@ -18,6 +18,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { EpreuveService } from './epreuve.service';
 import { CreateEpreuveDto } from './dto/create-epreuve.dto';
@@ -50,8 +51,11 @@ export class EpreuveController {
   @ApiResponse({ status: 201, type: EpreuveResponseDto })
   @ApiResponse({ status: 404, description: 'CoursClasse introuvable' })
   @ApiResponse({ status: 409, description: 'Cours non approuvé' })
-  create(@Body() dto: CreateEpreuveDto): Promise<EpreuveResponseDto> {
-    return this.epreuveService.create(dto);
+  create(
+    @Body() dto: CreateEpreuveDto,
+    @CurrentUser('id') actorId: string,
+  ): Promise<EpreuveResponseDto> {
+    return this.epreuveService.create(dto, actorId);
   }
 
   // ── GET /api/v1/epreuves/:id ─────────────────────────────────────────────
@@ -78,7 +82,10 @@ export class EpreuveController {
   @ApiResponse({ status: 204, description: 'Épreuve supprimée' })
   @ApiResponse({ status: 404, description: 'Épreuve introuvable' })
   @ApiResponse({ status: 409, description: 'Notes encore rattachées à cette épreuve' })
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.epreuveService.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') actorId: string,
+  ): Promise<void> {
+    return this.epreuveService.remove(id, actorId);
   }
 }

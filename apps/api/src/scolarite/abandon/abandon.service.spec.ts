@@ -1,5 +1,6 @@
 import { ConflictException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma, StatutAbandon } from '@prisma/client';
+import { AuditService } from '../../common/audit/audit.service';
 import { AbandonService } from './abandon.service';
 import { DecisionReprise } from './dto/decider-reprise.dto';
 
@@ -12,6 +13,7 @@ interface TxMock {
     updateMany: jest.Mock;
   };
   inscription: { findUnique: jest.Mock; update: jest.Mock };
+  auditLog: { create: jest.Mock };
 }
 
 const ACTOR = 'user-actor-1';
@@ -35,6 +37,7 @@ function makeAbandon(overrides: Record<string, unknown> = {}) {
 
 describe('AbandonService', () => {
   let service: AbandonService;
+  let audit: AuditService;
   let tx: TxMock;
   let prisma: { $transaction: jest.Mock };
 
@@ -47,13 +50,26 @@ describe('AbandonService', () => {
         updateMany: jest.fn(),
       },
       inscription: { findUnique: jest.fn(), update: jest.fn() },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
     };
     tx.abandon.updateMany.mockResolvedValue({ count: 1 });
     tx.inscription.update.mockResolvedValue({});
 
     prisma = { $transaction: jest.fn((cb: (t: TxMock) => unknown) => cb(tx)) };
-    service = new AbandonService(prisma as never);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new AbandonService(prisma as never, audit);
   });
+
+  /** Dernière entrée soumise à AuditService, et client utilisé pour l'écrire. */
+  function dernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][1];
+  }
+  function clientDuDernierAudit() {
+    const appels = (audit.record as jest.Mock).mock.calls;
+    return appels[appels.length - 1][0];
+  }
 
   // ── signaler() ───────────────────────────────────────────────────────────
   describe('signaler', () => {
@@ -104,7 +120,7 @@ describe('AbandonService', () => {
         makeAbandon({ statut: StatutAbandon.REPRISE_DEMANDEE, dateDemandeReprise: new Date() }),
       );
 
-      const result = await service.demanderReprise('abandon-1');
+      const result = await service.demanderReprise('abandon-1', ACTOR);
 
       expect(tx.abandon.updateMany).toHaveBeenCalledWith({
         where: { id: 'abandon-1', statut: StatutAbandon.CONSTATE },
@@ -115,13 +131,13 @@ describe('AbandonService', () => {
 
     it('lève NotFoundException si l\'abandon est introuvable', async () => {
       tx.abandon.findUnique.mockResolvedValue(null);
-      await expect(service.demanderReprise('absent')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.demanderReprise('absent', ACTOR)).rejects.toBeInstanceOf(NotFoundException);
       expect(tx.abandon.updateMany).not.toHaveBeenCalled();
     });
 
     it('lève UnprocessableEntityException (422) depuis un état terminal', async () => {
       tx.abandon.findUnique.mockResolvedValue(makeAbandon({ statut: StatutAbandon.REPRISE_ACCORDEE }));
-      await expect(service.demanderReprise('abandon-1')).rejects.toBeInstanceOf(
+      await expect(service.demanderReprise('abandon-1', ACTOR)).rejects.toBeInstanceOf(
         UnprocessableEntityException,
       );
       expect(tx.abandon.updateMany).not.toHaveBeenCalled();
@@ -130,7 +146,7 @@ describe('AbandonService', () => {
     it('lève ConflictException (409) sur conflit de concurrence (CAS count=0)', async () => {
       tx.abandon.findUnique.mockResolvedValue(makeAbandon({ statut: StatutAbandon.CONSTATE }));
       tx.abandon.updateMany.mockResolvedValue({ count: 0 });
-      await expect(service.demanderReprise('abandon-1')).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.demanderReprise('abandon-1', ACTOR)).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('REPRISE_REFUSEE → REPRISE_DEMANDEE : un refus n\'est pas définitif, le recours est autorisé', async () => {
@@ -139,7 +155,7 @@ describe('AbandonService', () => {
         makeAbandon({ statut: StatutAbandon.REPRISE_DEMANDEE, dateDemandeReprise: new Date() }),
       );
 
-      const result = await service.demanderReprise('abandon-1');
+      const result = await service.demanderReprise('abandon-1', ACTOR);
 
       expect(tx.abandon.updateMany).toHaveBeenCalledWith({
         where: { id: 'abandon-1', statut: StatutAbandon.REPRISE_REFUSEE },
@@ -195,6 +211,64 @@ describe('AbandonService', () => {
         service.deciderReprise('abandon-1', ACTOR, { decision: DecisionReprise.ACCORDEE }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(tx.inscription.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Audit métier (BACK-01, lot 5) ──────────────────────────────────────────
+
+  describe('audit métier', () => {
+    it('signaler : CREATE sur l\'abandon, l\'étudiant restant un détail', async () => {
+      tx.inscription.findUnique.mockResolvedValue({ id: 'inscription-1', etudiantId: 'etu-1', anneeId: 'annee-1' });
+      tx.abandon.create.mockResolvedValue(makeAbandon());
+
+      await service.signaler({ etudiantId: 'etu-1', anneeId: 'annee-1' }, ACTOR);
+
+      const e = dernierAudit();
+      expect(e.action).toBe('CREATE');
+      expect(e.entity).toBe('Abandon');
+      expect(e.actorId).toBe(ACTOR);
+      // L'étudiant concerné n'est PAS l'acteur : c'est la scolarité qui signale.
+      expect(e.details).toMatchObject({ etudiantId: 'etu-1' });
+      expect(e.actorId).not.toBe('etu-1');
+    });
+
+    it('demanderReprise : UPDATE journalisant la transition de statut', async () => {
+      tx.abandon.findUnique.mockResolvedValue(makeAbandon());
+      tx.abandon.findUniqueOrThrow.mockResolvedValue(makeAbandon());
+
+      await service.demanderReprise('abandon-1', ACTOR);
+
+      const e = dernierAudit();
+      expect(e.action).toBe('UPDATE');
+      expect(e.entity).toBe('Abandon');
+      expect(e.entityId).toBe('abandon-1');
+      expect(e.actorId).toBe(ACTOR);
+      expect(e.details).toMatchObject({ statutApres: 'REPRISE_DEMANDEE' });
+    });
+
+    it('l\'audit passe par le client de la transaction', async () => {
+      tx.abandon.findUnique.mockResolvedValue(makeAbandon());
+      tx.abandon.findUniqueOrThrow.mockResolvedValue(makeAbandon());
+
+      await service.demanderReprise('abandon-1', ACTOR);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(clientDuDernierAudit()).toBe(tx);
+    });
+
+    it('une transition invalide n\'écrit aucun audit', async () => {
+      tx.abandon.findUnique.mockResolvedValue(makeAbandon({ statut: StatutAbandon.REPRISE_ACCORDEE }));
+
+      await expect(service.demanderReprise('abandon-1', ACTOR)).rejects.toBeDefined();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('un conflit de concurrence n\'écrit aucun audit', async () => {
+      tx.abandon.findUnique.mockResolvedValue(makeAbandon());
+      tx.abandon.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.demanderReprise('abandon-1', ACTOR)).rejects.toBeDefined();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 });

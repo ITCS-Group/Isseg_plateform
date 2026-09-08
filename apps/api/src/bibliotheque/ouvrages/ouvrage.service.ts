@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { PaginationMetaDto } from '../../common/dto/pagination.dto';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateOuvrageDto } from './dto/create-ouvrage.dto';
 import { ListOuvrageQueryDto } from './dto/list-ouvrage-query.dto';
@@ -34,7 +35,10 @@ type OuvrageRow = Prisma.OuvrageGetPayload<{ select: typeof OUVRAGE_SELECT }>;
 export class OuvrageService {
   private readonly logger = new Logger(OuvrageService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ── Lecture ───────────────────────────────────────────────────────────────
 
@@ -78,7 +82,7 @@ export class OuvrageService {
 
   // ── Création ──────────────────────────────────────────────────────────────
 
-  async create(dto: CreateOuvrageDto): Promise<OuvrageResponseDto> {
+  async create(dto: CreateOuvrageDto, actorId: string): Promise<OuvrageResponseDto> {
     const section = await this.prisma.sectionBibliotheque.findUnique({
       where: { id: dto.sectionId },
     });
@@ -86,7 +90,8 @@ export class OuvrageService {
       throw new NotFoundException(`SectionBibliotheque introuvable (id: ${dto.sectionId})`);
     }
 
-    const created = await this.prisma.ouvrage.create({
+    const created = await this.prisma.$transaction(async (tx) => {
+      const ouvrage = await tx.ouvrage.create({
       data: {
         isbn: dto.isbn,
         titre: dto.titre,
@@ -103,6 +108,17 @@ export class OuvrageService {
         sectionId: dto.sectionId,
       },
       select: OUVRAGE_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'CREATE',
+        entity: 'Ouvrage',
+        entityId: ouvrage.id,
+        actorId,
+        details: { cote: ouvrage.cote, titre: ouvrage.titre, sectionId: dto.sectionId },
+      });
+
+      return ouvrage;
     });
 
     this.logger.log(`Ouvrage créé (cote: ${created.cote})`);
@@ -111,7 +127,11 @@ export class OuvrageService {
 
   // ── Modification ──────────────────────────────────────────────────────────
 
-  async update(id: string, dto: UpdateOuvrageDto): Promise<OuvrageResponseDto> {
+  async update(
+    id: string,
+    dto: UpdateOuvrageDto,
+    actorId: string,
+  ): Promise<OuvrageResponseDto> {
     const existing = await this.findRowOrThrow(id);
 
     if (dto.sectionId) {
@@ -132,7 +152,8 @@ export class OuvrageService {
       exemplairesDisponibles = Math.max(0, existing.exemplairesDisponibles + delta);
     }
 
-    const updated = await this.prisma.ouvrage.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.ouvrage.update({
       where: { id },
       data: {
         isbn: dto.isbn,
@@ -151,6 +172,17 @@ export class OuvrageService {
         sectionId: dto.sectionId,
       },
       select: OUVRAGE_SELECT,
+      });
+
+      await this.audit.record(tx, {
+        action: 'UPDATE',
+        entity: 'Ouvrage',
+        entityId: id,
+        actorId,
+        details: { champsModifies: Object.keys(dto) },
+      });
+
+      return row;
     });
 
     this.logger.log(`Ouvrage modifié : ${id}`);
@@ -159,8 +191,10 @@ export class OuvrageService {
 
   // ── Suppression ───────────────────────────────────────────────────────────
 
-  async remove(id: string): Promise<void> {
-    await this.findRowOrThrow(id);
+  async remove(id: string, actorId: string): Promise<void> {
+    // Cote et titre capturés AVANT la suppression : la trace doit rester
+    // intelligible une fois la ligne effacée.
+    const ouvrage = await this.findRowOrThrow(id);
 
     const empruntsEnCoursCount = await this.prisma.emprunt.count({
       where: { ouvrageId: id, statut: { in: ['EN_COURS', 'EN_RETARD'] } },
@@ -171,7 +205,18 @@ export class OuvrageService {
       );
     }
 
-    await this.prisma.ouvrage.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.ouvrage.delete({ where: { id } });
+
+      await this.audit.record(tx, {
+        action: 'DELETE',
+        entity: 'Ouvrage',
+        entityId: id,
+        actorId,
+        details: { cote: ouvrage.cote, titre: ouvrage.titre },
+      });
+    });
+
     this.logger.log(`Ouvrage supprimé : ${id}`);
   }
 

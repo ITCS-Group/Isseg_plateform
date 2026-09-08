@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, NotFoundException } from '@nestj
 import { Prisma, StatutInscriptionCoursSupportIT } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/interfaces/auth.interfaces';
 import { AttestationService } from '../attestations/attestation.service';
+import { AuditService } from '../../common/audit/audit.service';
 import { InscriptionCoursSupportITService } from './inscription.service';
 
 interface PrismaMock {
@@ -15,6 +16,7 @@ interface PrismaMock {
   };
   evaluationSupportIT: { findUnique: jest.Mock; create: jest.Mock };
   $transaction: jest.Mock;
+  auditLog: { create: jest.Mock };
 }
 
 const COURS = { id: 'cours-1', titre: 'Bureautique niveau 1' };
@@ -43,8 +45,12 @@ function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser
   };
 }
 
+/** Acteur des mutations. Prisma est mocké : aucune contrainte de clé étrangère. */
+const acteurId = 'acteur-1';
+
 describe('InscriptionCoursSupportITService', () => {
   let service: InscriptionCoursSupportITService;
+  let audit: AuditService;
   let prisma: PrismaMock;
   let attestationService: AttestationService;
 
@@ -72,27 +78,30 @@ describe('InscriptionCoursSupportITService', () => {
           statutReussite: true,
         }),
       },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
       $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prisma)),
     };
     attestationService = new AttestationService();
-    service = new InscriptionCoursSupportITService(prisma as never, attestationService);
+    audit = new AuditService();
+    jest.spyOn(audit, 'record');
+    service = new InscriptionCoursSupportITService(prisma as never, attestationService, audit);
   });
 
   describe('enroll', () => {
     it('cours introuvable → NotFoundException', async () => {
       prisma.coursSupportIT.findUnique.mockResolvedValue(null);
-      await expect(service.enroll('cours-x', 'user-1')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.enroll('cours-x', 'user-1', acteurId)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('déjà inscrit (P2002) → ConflictException', async () => {
       prisma.inscriptionCoursSupportIT.create.mockRejectedValue(
         new Prisma.PrismaClientKnownRequestError('duplicate', { code: 'P2002', clientVersion: 'x' }),
       );
-      await expect(service.enroll('cours-1', 'user-1')).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.enroll('cours-1', 'user-1', acteurId)).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('inscription réussie', async () => {
-      const result = await service.enroll('cours-1', 'user-1');
+      const result = await service.enroll('cours-1', 'user-1', acteurId);
       expect(result.id).toBe('insc-1');
       expect(result.coursTitre).toBe('Bureautique niveau 1');
     });
@@ -141,20 +150,20 @@ describe('InscriptionCoursSupportITService', () => {
   describe('evaluer', () => {
     it('inscription introuvable → NotFoundException', async () => {
       prisma.inscriptionCoursSupportIT.findUnique.mockResolvedValue(null);
-      await expect(service.evaluer('missing', { note: 15, statutReussite: true })).rejects.toBeInstanceOf(
+      await expect(service.evaluer('missing', { note: 15, statutReussite: true }, acteurId)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it('déjà évaluée → ConflictException', async () => {
       prisma.evaluationSupportIT.findUnique.mockResolvedValue({ id: 'eval-existing' });
-      await expect(service.evaluer('insc-1', { note: 15, statutReussite: true })).rejects.toBeInstanceOf(
+      await expect(service.evaluer('insc-1', { note: 15, statutReussite: true }, acteurId)).rejects.toBeInstanceOf(
         ConflictException,
       );
     });
 
     it('réussite → attestation générée dans la réponse', async () => {
-      const result = await service.evaluer('insc-1', { note: 16, statutReussite: true });
+      const result = await service.evaluer('insc-1', { note: 16, statutReussite: true }, acteurId);
       expect(result.attestation).toBeDefined();
       expect(result.attestation?.coursTitre).toBe('Bureautique niveau 1');
       expect(prisma.inscriptionCoursSupportIT.update).toHaveBeenCalledWith({
@@ -171,7 +180,7 @@ describe('InscriptionCoursSupportITService', () => {
         date: new Date(),
         statutReussite: false,
       });
-      const result = await service.evaluer('insc-1', { note: 5, statutReussite: false });
+      const result = await service.evaluer('insc-1', { note: 5, statutReussite: false }, acteurId);
       expect(result.attestation).toBeUndefined();
     });
   });
