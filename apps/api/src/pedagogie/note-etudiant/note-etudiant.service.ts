@@ -104,10 +104,6 @@ const NOTE_WITH_OWNERSHIP_SELECT = {
   },
 } satisfies Prisma.NoteEtudiantSelect;
 
-type NoteEtudiantWithOwnershipRow = Prisma.NoteEtudiantGetPayload<{
-  select: typeof NOTE_WITH_OWNERSHIP_SELECT;
-}>;
-
 /**
  * La protection de suppression liée à NoteEtudiantHistory sera ajoutée à une
  * étape suivante validée séparément.

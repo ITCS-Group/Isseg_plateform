@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaClient, StatutEmprunt, StatutOuvrage, StatutPaiement, StatutTransaction, TypeAbonne } from '@prisma/client';
+import { PrismaClient, StatutEmprunt, StatutOuvrage, StatutPaiement, TypeAbonne } from '@prisma/client';
 import { createTestPrisma, truncateAll } from '../../../test/prisma-test-client';
 import { RegularityService } from '../../scolarite/regularity/regularity.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -446,7 +446,9 @@ describe('Intégration — EmpruntService (isseg_test)', () => {
     it('un refus métier avant la transaction n\'écrit aucun audit', async () => {
       const service = makeService();
       const section = await makeSection();
-      const ouvrage = await makeOuvrage(section.id, 2);
+      // L'ouvrage créé ici n'est pas celui qu'on demande : le refus doit venir
+      // de l'identifiant inconnu, pas d'une table vide.
+      await makeOuvrage(section.id, 2);
       const { user } = await makeEnseignantAbonne();
 
       // Ouvrage inexistant : refus avant toute écriture.

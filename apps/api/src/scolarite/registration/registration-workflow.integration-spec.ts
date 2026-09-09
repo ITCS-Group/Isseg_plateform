@@ -338,6 +338,7 @@ describe('Intégration — RegistrationWorkflowService (isseg_test)', () => {
     // NB : $transaction est surchargée (batch / callback interactif) et ne se type pas
     // proprement via mockImplementation → cast `as any` LOCAL au test (aucun impact métier).
     const realTransaction = prisma.$transaction.bind(prisma);
+    /* eslint-disable @typescript-eslint/no-explicit-any -- surcharge $transaction non typable via mockImplementation, cast local au test */
     const impl = (cb: any, opts: any) =>
       realTransaction(async (tx: any) => {
         const patched = new Proxy(tx, {
@@ -351,6 +352,7 @@ describe('Intégration — RegistrationWorkflowService (isseg_test)', () => {
         return cb(patched);
       }, opts);
     const spy = jest.spyOn(prisma, '$transaction').mockImplementation(impl as any);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
 
     await expect(service.register(dossier.id, actor.id, { expectedVersion: 1 })).rejects.toThrow('boom');
     spy.mockRestore();

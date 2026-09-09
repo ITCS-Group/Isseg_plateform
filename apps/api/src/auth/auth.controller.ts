@@ -18,6 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import type { Request, Response } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
@@ -62,7 +63,7 @@ export class AuthController {
   @ApiResponse({ status: 429, description: 'Trop de tentatives — réessayez dans 60 secondes' })
   async login(
     @Body() dto: LoginDto,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AccessTokenResponseDto> {
     const { accessToken, refreshToken } = await this.authService.login(dto);
 
@@ -107,8 +108,8 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Refresh token invalide, expiré ou révoqué' })
   @ApiResponse({ status: 429, description: 'Trop de requêtes' })
   async refresh(
-    @Req() req: any,
-    @Res({ passthrough: true }) res: any,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AccessTokenResponseDto> {
     const cookieName = this.config.get<string>('cookie.name', 'refreshToken');
     const refreshToken = req.cookies?.[cookieName];
@@ -167,7 +168,7 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Token manquant ou invalide' })
   async logout(
     @CurrentUser('id') userId: string,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
     await this.authService.logout(userId);
 
