@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "nest start --watch",
-    "build": "nest build"
+    "build": "nest build",
+    "lint": "eslint . --max-warnings 0"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
