@@ -1,1 +1,1 @@
-﻿{ "extends": "@isseg/config/typescript/next.json", "include": ["src"] }
+{ "extends": "@isseg/config/typescript/next.json", "include": ["src"] }
