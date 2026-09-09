@@ -573,7 +573,7 @@ export class AuthService {
   private async createAuditLog(params: {
     utilisateurId: string | null;
     action: AuditAction;
-    details?: Record<string, any>;
+    details?: Prisma.InputJsonObject;
     ipAddress?: string;
     userAgent?: string;
   }): Promise<void> {
