@@ -1,0 +1,20 @@
+# Normalisation des fins de ligne pour tout le dépôt.
+# Les fichiers historiques ont été créés sous Windows : cette règle garantit
+# que le contenu stocké dans Git utilise toujours des fins de ligne LF,
+# quel que soit le système de l'auteur.
+* text=auto eol=lf
+
+# Fichiers binaires : jamais de normalisation.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+
+# Scripts shell : LF obligatoire, sinon ils ne s'exécutent pas sous Linux.
+*.sh text eol=lf
