@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "ts-node src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "lint": "eslint . --max-warnings 0"
   },
   "dependencies": {
     "bullmq": "^5.0.0",

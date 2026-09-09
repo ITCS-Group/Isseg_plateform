@@ -8,9 +8,11 @@
     "lint": "turbo run lint"
   },
   "devDependencies": {
-    "turbo": "^1.13.0",
+    "@typescript-eslint/eslint-plugin": "^7",
+    "@typescript-eslint/parser": "^7",
     "eslint": "^8.0.0",
     "prettier": "^3.0.0",
+    "turbo": "^1.13.0",
     "typescript": "^5.0.0"
   },
   "packageManager": "pnpm@9.0.0"

@@ -6,7 +6,7 @@
       "outputs": ["dist/**", ".next/**", "public/dist/**"]
     },
     "lint": {
-      "dependsOn": ["^lint"]
+      "outputs": []
     },
     "dev": {
       "cache": false,
