@@ -55,5 +55,16 @@ module.exports = {
       env: { browser: true },
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    {
+      // CommonJS assumé : scripts de test, fichiers de configuration. Les règles
+      // issues de plugin:@typescript-eslint/recommended s'appliquent à tous les
+      // fichiers, y compris ceux qui ne sont pas du TypeScript, où `require()`
+      // est la forme correcte et non un défaut. Placé en dernier pour primer.
+      files: ['*.js', '*.cjs'],
+      rules: {
+        '@typescript-eslint/no-var-requires': 'off',
+        '@typescript-eslint/no-require-imports': 'off',
+      },
+    },
   ],
 };
